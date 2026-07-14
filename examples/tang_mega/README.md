@@ -20,9 +20,10 @@ pair with the required bias network) and HPD.
 ## Timing viability (verified)
 
 `tang_mega_dp.gprj` is a full Gowin EDA project (GW5AT-LV60PG484) that
-places and routes the complete transmitter with `synth_check_top.sv` -
-clocks arrive on input pins at the production 1080p60/HBR rates since
-the SERDES/PLL IP is not yet generated. Build with the pipe method:
+places and routes the complete transmitter with `synth_check_top.sv`,
+including the generated `dp_serdes` GTR12 IP (src/serdes/) and the PLLA
+clock wrappers - the real 1080p60/HBR clock topology. Build with the
+pipe method:
 
 ```
 cd examples/tang_mega
@@ -32,12 +33,11 @@ exit' | /Applications/GowinIDE.app/Contents/Resources/Gowin_EDA/IDE/bin/gw_sh
 ```
 
 Result (Gowin V1.9.12.02 SP2): **timing closed, 0 violated endpoints,
-TNS 0.000** - clk100 101.5/100 MHz, clk_sym 137.1/135 MHz, clk_pix
-183.4/148.5 MHz; utilization 2655 LUT (5%), 2205 FF (4%), 13 BSRAM
-(12%). The real clocks (SERDES word clock, PLL pixel clock) use
-dedicated clock routing, so this pin-clocked result is conservative.
-If clk_sym margin ever tightens, the next lever is one more pipeline
-stage in the SDP engine's wire-byte mux.
+TNS 0.000, bitstream generated** - clk100 109.4/100 MHz, clk_sym
+136.9/135 MHz, clk_pix 180.3/148.5 MHz, worst setup slack +0.103 ns;
+utilization 2881 LUT (5%), 2343 FF (4%), 13 BSRAM (12%). If clk_sym
+margin ever tightens, the next lever is one more pipeline stage in the
+SDP engine's wire-byte mux.
 
 ## SERDES IP generation (Gowin EDA IP Core Generator)
 
@@ -53,10 +53,9 @@ Generate a **Customized PHY** (IPUG1024) with:
   `src/gowin/lane_encoder_8b10b.v`, because DP link training (TPS2)
   requires per-character disparity forcing which the GTR12 hard PCS does
   not expose
-- Optional: enable the **DRP port** and export `.csr` write sequences for
-  "TX AFE" (swing / FFE) if you want link-training-driven drive levels;
-  otherwise set Vdiffpp 400 mV, FFE flat, and rely on max-swing-reached
-  DPCD replies
+- DRP port enabled (future link-training-driven swing/FFE via exported
+  "TX AFE" `.csr` write sequences); Vdiffpp **420 mV** (DP level 0 +5%),
+  FFE flat (Cm=0, C0=40, C1=0), TX bonding master = Q0 Lane0
 
 Keep the generated `serdes.v` / `Customized_PHY_Top` **and the
 `serdes.toml` / `.csr` sidecars** in the project — the sidecars carry most
@@ -64,12 +63,14 @@ of the configuration. Match the port names in
 `src/gowin/transceiver_bank_gowin.v` (`GOWIN_SERDES_IP` branch) to the
 generated wrapper.
 
-Also generate two fabric PLLs (`gowin_mgmt_pll`: board osc → 100 MHz for
-the AUX timing; `gowin_pixel_pll`: 81 MHz word clock × 11/12 → 74.25 MHz
-pixel clock).
+The two fabric PLLs are hand-instantiated PLLA wrappers in
+`src/gowin/gowin_plls.v` (`gowin_mgmt_pll`: 50 MHz osc x24 VCO /12 =
+100 MHz for AUX timing; `gowin_pixel_pll`: 135 MHz x44/5 VCO /8 =
+148.5 MHz pixel clock); regenerate in the IP GUI if the PLLA
+boilerplate changes across IDE versions.
 
-The TX fabric clock is `tx_pcs_clkout` = line rate / 20 = **81 MHz**,
-shared by both lanes; it is the design's `tx_symbol_clk`.
+The TX fabric clock is `tx_pcs_clkout` = line rate / 20 = **135 MHz**
+at HBR, shared by both lanes; it is the design's `tx_symbol_clk`.
 
 ## Build defines
 
