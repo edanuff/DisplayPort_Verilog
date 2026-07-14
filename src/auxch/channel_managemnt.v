@@ -58,7 +58,9 @@
 ///////////////////////////////////////////////////////////////////////////////
 `timescale 1ns / 1ps
 
-module channel_management(
+module channel_management #(
+    parameter LINK_RATE_MBPS = 2700
+)(
         input  clk100,
         output [7:0] debug,
 
@@ -175,7 +177,7 @@ hotplug_decode i_hotplug_decode(
         .present (hpd_present)
     );
 
-aux_channel i_aux_channel( 
+aux_channel #(.LINK_RATE_MBPS(LINK_RATE_MBPS)) i_aux_channel( 
         .clk             (clk100),
         .debug_pmod      (debug),
          //------------------------------

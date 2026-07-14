@@ -58,7 +58,9 @@
 ///////////////////////////////////////////////////////////////////////////////
 `timescale 1ns / 1ps
 
-module dp_aux_messages(
+module dp_aux_messages #(
+    parameter LINK_RATE_MBPS = 2700   // 1620 (RBR) or 2700 (HBR)
+)(
    input        clk,
 
    // Interface to send messages
@@ -119,12 +121,12 @@ always @(posedge clk) begin
        12'h063: begin aux_tx_data <= 8'h00; aux_tx_wr_en <= 1'b1; end
        12'h064: begin aux_tx_data <= 8'h01; aux_tx_wr_en <= 1'b1; end
 
-       // Set link bandwidth 2.70 Gb/s
+       // Set link bandwidth (DPCD 0x100: rate / 0.27 Gbps)
        12'h070: begin aux_tx_data <= 8'h80; aux_tx_wr_en <= 1'b1; end
        12'h071: begin aux_tx_data <= 8'h01; aux_tx_wr_en <= 1'b1; end
        12'h072: begin aux_tx_data <= 8'h00; aux_tx_wr_en <= 1'b1; end
        12'h073: begin aux_tx_data <= 8'h00; aux_tx_wr_en <= 1'b1; end
-       12'h074: begin aux_tx_data <= 8'h0A; aux_tx_wr_en <= 1'b1; end
+       12'h074: begin aux_tx_data <= LINK_RATE_MBPS/270; aux_tx_wr_en <= 1'b1; end
 
        // Write Link Downspread
        12'h080: begin aux_tx_data <= 8'h80; aux_tx_wr_en <= 1'b1; end

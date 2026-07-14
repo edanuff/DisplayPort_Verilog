@@ -1,5 +1,5 @@
 ///////////////////////////////////////////////////////////////////////////////
-// insert_main_stream_attrbutes_four_channels.v : 
+// ./src/test_streams/insert_main_stream_attrbutes_one_channel.v : 
 //
 // Author: Mike Field <hamster@snap.net.nz>
 //
@@ -56,7 +56,7 @@
 //  Commercial use  - A weeks pay for an engineer (I wish!)
 //
 ///////////////////////////////////////////////////////////////////////////////
-module insert_main_stream_attrbutes_four_channels(
+module msa_inserter_1ch(
         input  clk,
         //---------------------------------------------------
         // This determines how the MSA is packed
@@ -101,13 +101,13 @@ module insert_main_stream_attrbutes_four_channels(
     reg [7:0] misc0;
     reg [7:0] misc1;
     
-    reg [3:0] count;
+    reg [4:0] count;
 
     reg [0:0] last_was_bs;
     reg [0:0] armed;
 
 initial begin
-        count       <= 4'b0000;
+        count       <= 5'b00000;
         armed       <= 1'b0;
         last_was_bs <= 1'b0;
     end
@@ -138,74 +138,51 @@ always @(*) begin
     end
 
 always @(posedge clk) begin
-    out_data[72] <= in_data[72];
+    // default to copying the input data across
+    out_data <= in_data;
+  
+    case(count)
+        5'b00000: out_data[17:0] <= in_data[17:0]; // while waiting for BS symbol
+        5'b00001: out_data[17:0] <= in_data[17:0]; // reserved for VB-ID, Maud, Mvid 
+        5'b00010: out_data[17:0] <= in_data[17:0]; // reserved for VB-ID, Maud, Mvid
+        5'b00011: out_data[17:0] <= in_data[17:0]; // reserved for VB-ID, Maud, Mvid
+        5'b00100: out_data[17:0] <= in_data[17:0]; // reserved for VB-ID, Maud, Mvid
+        5'b00101: out_data[17:0] <= in_data[17:0]; // reserved for VB-ID, Maud, Mvid
+        5'b00110: out_data[17:0] <= in_data[17:0]; // reserved for VB-ID, Maud, Mvid
+        5'b00111: out_data[17:0] <= {SS, SS}; 
 
-    // channel One
-    case(count)
-     // 4'b0000: // while waiting for BS symbol
-     // 4'b0001: // reserved for VB-ID, Maud, Mvid   // Note the VB-ID Maud + Mvid are repeated once
-     // 4'b0010: // reserved for VB-ID, Maud, Mvid
-        4'b0011: out_data[17:0] <= { SS,                                                    SS }; 
-        4'b0100: out_data[17:0] <= { 1'b0, M_value[15:8],                                   1'b0, M_value[23:16] };
-        4'b0101: out_data[17:0] <= { 1'b0, 4'b0000, H_total[11:8],                          1'b0, M_value[7:0] };
-        4'b0110: out_data[17:0] <= { 1'b0, 4'b0000, V_total[11:8],                          1'b0, H_total[7:0] };
-        4'b0111: out_data[17:0] <= { 1'b0, H_vsync_active_high, 3'b000, H_sync_width[11:8], 1'b0, V_total[7:0] };
-        4'b1000: out_data[17:0] <= { 1'b0, SE,                                              1'b0, H_sync_width[7:0] };
-        default: out_data[17:0] <= { in_data[17:9],                                         in_data[8:0]};
-    endcase
-
-    // channel Two
-    case(count)
-     // 4'b0000: // while waiting for BS symbol
-     // 4'b0001: // reserved for VB-ID, Maud, Mvid 
-     // 4'b0010: // reserved for VB-ID, Maud, Mvid
-        4'b0011: out_data[35:18] <= { SS,                                                    SS};
-        4'b0100: out_data[35:18] <= { 1'b0, M_value[15:8],                                   1'b0, M_value[23:16]};
-        4'b0101: out_data[35:18] <= { 1'b0, 4'b0000, H_start[11:8],                          1'b0, M_value[7:0]};
-        4'b0110: out_data[35:18] <= { 1'b0, 4'b0000, V_start[11:8],                          1'b0, H_start[7:0]};
-        4'b0111: out_data[35:18] <= { 1'b0, V_vsync_active_high, 3'b000, V_sync_width[11:8], 1'b0, V_start[7:0]};
-        4'b1000: out_data[35:18] <= { 1'b0, SE,                                              1'b0, V_sync_width[7:0]};
-        default: out_data[35:18] <= { in_data[35:27],                                        in_data[26:18] };
-    endcase
-    
-    // Channel three           
-    case(count)
-     // 4'b0000: // while waiting for BS symbol
-     // 4'b0001: // reserved for VB-ID, Maud, Mvid   // Note the VB-ID Maud + Mvid are repeated once
-     // 4'b0010: // reserved for VB-ID, Maud, Mvid
-        4'b0011: out_data[53:36] <= { SS,                                                    SS }; 
-        4'b0100: out_data[53:36] <= { 1'b0, M_value[15:8],                                   1'b0, M_value[23:16] };
-        4'b0101: out_data[53:36] <= { 1'b0, 4'b0000, H_visible[11:8],                        1'b0, M_value[7:0] };
-        4'b0110: out_data[53:36] <= { 1'b0, 4'b0000, V_visible[11:8],                        1'b0, 4'b0000, H_visible[7:0] };
-        4'b0111: out_data[53:36] <= { 1'b0, 8'b00000000,                                     1'b0, 4'b0000, V_visible[7:0] };
-        4'b1000: out_data[53:36] <= { 1'b0, SE,                                              1'b0, 8'b00000000 };
-        default: out_data[53:36] <= { in_data[53:44],                                        in_data[44:36]};
+        5'b01000: out_data[17:0] <= {1'b0, M_value[15:8],            1'b0, M_value[23:16]};
+        5'b01001: out_data[17:0] <= {1'b0, 4'b0000, H_total[11:8],   1'b0, M_value[7:0]};
+        5'b01010: out_data[17:0] <= {1'b0, 4'b0000, V_total[11:8],   1'b0, H_total[7:0]};
+        5'b01011: out_data[17:0] <= {1'b0, H_vsync_active_high, 3'b000, H_sync_width[11:8], 1'b0, V_total[7:0]};
+        5'b01100: out_data[17:0] <= {1'b0, M_value[23:16],           1'b0, H_sync_width[7:0]};
+        5'b01101: out_data[17:0] <= {1'b0, M_value[7:0],             1'b0, M_value[15:8]};
+        5'b01110: out_data[17:0] <= {1'b0, H_start[7:0],             1'b0, 4'b0000, H_start[11:8]};
+        5'b01111: out_data[17:0] <= {1'b0, V_start[7:0],             1'b0, 4'b0000, V_start[11:8]};
+        5'b10000: out_data[17:0] <= {1'b0, V_sync_width[7:0],        1'b0, V_vsync_active_high, 3'b000, V_sync_width[11:8]};
+        5'b10001: out_data[17:0] <= {1'b0, M_value[15:8],            1'b0, M_value[23:16]};
+        5'b10010: out_data[17:0] <= {1'b0, 4'b0000, H_visible[11:8], 1'b0, M_value[7:0]};
+        5'b10011: out_data[17:0] <= {1'b0, 4'b0000, V_visible[11:8], 1'b0, H_visible[7:0]};
+        5'b10100: out_data[17:0] <= {1'b0, 8'b00000000,              1'b0, V_visible[7:0]};
+        5'b10101: out_data[17:0] <= {1'b0, M_value[23:16],           1'b0, 8'b00000000};
+        5'b10110: out_data[17:0] <= {1'b0, M_value[7:0],             1'b0, M_value[15: 8]};
+        5'b10111: out_data[17:0] <= {1'b0, N_value[15: 8],           1'b0, N_value[23:16]}; 
+        5'b11000: out_data[17:0] <= {1'b0, misc0,                    1'b0, N_value[7:0]}; 
+        5'b11001: out_data[17:0] <= {1'b0, 8'b00000000,              1'b0, misc1}; 
+        5'b11010: out_data[17:0] <= {1'b0, 8'b00000000,              SE};
+        default:  out_data[17:0] <= in_data[17:0];
     endcase
 
-    // channel Four 
-    case(count)
-     // 4'b0000: // while waiting for BS symbol
-     // 4'b0001: // reserved for VB-ID, Maud, Mvid 
-     // 4'b0010: // reserved for VB-ID, Maud, Mvid
-        4'b0011: out_data[71:54] <= { SS,                                                    SS};
-        4'b0100: out_data[71:54] <= { 1'b0, M_value[15:8],                                   1'b0, M_value[23:16]};
-        4'b0101: out_data[71:54] <= { 1'b0, N_value[23:16],                                  1'b0, M_value[7:0]};
-        4'b0110: out_data[71:54] <= { 1'b0, N_value[7:0],                                    1'b0, N_value[15:8]}; 
-        4'b0111: out_data[71:54] <= { 1'b0, misc1,                                           1'b0, misc0};
-        4'b1000: out_data[71:54] <= { 1'b0, SE,                                              1'b0, 8'b00000000}; 
-        default: out_data[71:54] <= { in_data[71:64],                                        in_data[63:56] };
-    endcase
-                
-    //---------------------------------------------------------
+    //----------------------------------------------------------
     // Update the counter
     //----------------------------------------------------------
-    if(count == 4'b1000) begin
-        count <= 4'b0000;
-    end else if(count != 4'b0000) begin
+    if(count == 5'b11011) begin
+        count <= 5'b00000;
+    end else if(count != 5'b00000) begin
         count <= count + 1;
-    end
+    end 
 
-    //------------------------------------------
+    //-------------------------------------------
     // Was the BS in the channel 0's data1 symbol
     // during the last cycle? 
     //-------------------------------------------            
@@ -217,7 +194,7 @@ always @(posedge clk) begin
         //-------------------------------
         if(in_data[0] == 1'b1) begin
             if(armed == 1'b1) begin
-                count <= 4'b0001;
+                count <= 5'b00001;
                 armed <= 1'b0;
             end
         end else begin
@@ -232,26 +209,30 @@ always @(posedge clk) begin
     //-------------------------------------------
     if(in_data[8:0] == BS) begin
         //-------------------------------
-        // This time in_data[17:9] = VB-ID
+        // This time in_data(17 downto 9) = VB-ID
         // First, see if this is a line in 
         // the VSYNC
         //-------------------------------
         if(in_data[9] == 1'b1) begin
             if(armed == 1'b1) begin
-                count <= 4'b0001;
+                count <= 5'b00001;
                 armed <= 1'b0;
             end
         end else begin
             // Not in the Vblank. so arm the trigger to send the MSA 
             // when the next BS with Vblank asserted occurs                      
             armed <= 1'b1;
-        end 
+        end
     end
-    
+            
     //-------------------------------------------
     // Is the BS in the channel 0's data1 symbol? 
     //-------------------------------------------
-    last_was_bs <= (in_data[17:9] == BS) ? 1'b1 : 1'b0;
+    if(in_data[17:9] == BS) begin
+        last_was_bs <= 1'b1;
+    end else begin
+        last_was_bs <= 1'b0;               
+    end
 end
 
 endmodule

@@ -1,5 +1,5 @@
 ///////////////////////////////////////////////////////////////////////////////
-// insert_main_stream_attrbutes_two_channels.v : 
+// insert_main_stream_attrbutes_four_channels.v : 
 //
 // Author: Mike Field <hamster@snap.net.nz>
 //
@@ -56,7 +56,7 @@
 //  Commercial use  - A weeks pay for an engineer (I wish!)
 //
 ///////////////////////////////////////////////////////////////////////////////
-module insert_main_stream_attrbutes_two_channels(
+module msa_inserter_4ch(
         input  clk,
         //---------------------------------------------------
         // This determines how the MSA is packed
@@ -107,10 +107,9 @@ module insert_main_stream_attrbutes_two_channels(
     reg [0:0] armed;
 
 initial begin
-        count       <= 5'b00000;
+        count       <= 4'b0000;
         armed       <= 1'b0;
         last_was_bs <= 1'b0;
-        out_data    <= 72'b0;
     end
 
 
@@ -140,49 +139,67 @@ always @(*) begin
 
 always @(posedge clk) begin
     out_data[72] <= in_data[72];
-    
+
+    // channel One
+    case(count)
+     // 4'b0000: // while waiting for BS symbol
+     // 4'b0001: // reserved for VB-ID, Maud, Mvid   // Note the VB-ID Maud + Mvid are repeated once
+     // 4'b0010: // reserved for VB-ID, Maud, Mvid
+        4'b0011: out_data[17:0] <= { SS,                                                    SS }; 
+        4'b0100: out_data[17:0] <= { 1'b0, M_value[15:8],                                   1'b0, M_value[23:16] };
+        4'b0101: out_data[17:0] <= { 1'b0, 4'b0000, H_total[11:8],                          1'b0, M_value[7:0] };
+        4'b0110: out_data[17:0] <= { 1'b0, 4'b0000, V_total[11:8],                          1'b0, H_total[7:0] };
+        4'b0111: out_data[17:0] <= { 1'b0, H_vsync_active_high, 3'b000, H_sync_width[11:8], 1'b0, V_total[7:0] };
+        4'b1000: out_data[17:0] <= { 1'b0, SE,                                              1'b0, H_sync_width[7:0] };
+        default: out_data[17:0] <= { in_data[17:9],                                         in_data[8:0]};
+    endcase
+
+    // channel Two
     case(count)
      // 4'b0000: // while waiting for BS symbol
      // 4'b0001: // reserved for VB-ID, Maud, Mvid 
      // 4'b0010: // reserved for VB-ID, Maud, Mvid
-     // 4'b0011: // reserved for VB-ID, Maud, Mvid
-        4'b0100: out_data[17:0] <= { SS,                                                    SS }; 
-        4'b0101: out_data[17:0] <= { 1'b0, M_value[15:8],                                   1'b0, M_value[23:16] };
-        4'b0110: out_data[17:0] <= { 1'b0, 4'b0000, H_total[11:8],                          1'b0, M_value[7:0] };
-        4'b0111: out_data[17:0] <= { 1'b0, 4'b0000, V_total[11:8],                          1'b0, H_total[7:0] };
-        4'b1000: out_data[17:0] <= { 1'b0, H_vsync_active_high, 3'b000, H_sync_width[11:8], 1'b0, V_total[7:0] };
-        4'b1001: out_data[17:0] <= { 1'b0, M_value[23:16],                                  1'b0, H_sync_width[7:0] };
-        4'b1010: out_data[17:0] <= { 1'b0, M_value[7:0],                                    1'b0, M_value[15:8] };
-        4'b1011: out_data[17:0] <= { 1'b0, H_visible[7:0],                                  1'b0, 4'b0000, H_visible[11:8] };
-        4'b1100: out_data[17:0] <= { 1'b0, V_visible[7:0],                                  1'b0, 4'b0000, V_visible[11:8] };
-        4'b1101: out_data[17:0] <= { 1'b0, 8'b00000000,                                     1'b0, 8'b00000000 };
-        4'b1110: out_data[17:0] <= { in_data[17:9],                                         SE };
-        default:  out_data[17:0] <= { in_data[17:9],                                         in_data[8:0]};
+        4'b0011: out_data[35:18] <= { SS,                                                    SS};
+        4'b0100: out_data[35:18] <= { 1'b0, M_value[15:8],                                   1'b0, M_value[23:16]};
+        4'b0101: out_data[35:18] <= { 1'b0, 4'b0000, H_start[11:8],                          1'b0, M_value[7:0]};
+        4'b0110: out_data[35:18] <= { 1'b0, 4'b0000, V_start[11:8],                          1'b0, H_start[7:0]};
+        4'b0111: out_data[35:18] <= { 1'b0, V_vsync_active_high, 3'b000, V_sync_width[11:8], 1'b0, V_start[7:0]};
+        4'b1000: out_data[35:18] <= { 1'b0, SE,                                              1'b0, V_sync_width[7:0]};
+        default: out_data[35:18] <= { in_data[35:27],                                        in_data[26:18] };
+    endcase
+    
+    // Channel three           
+    case(count)
+     // 4'b0000: // while waiting for BS symbol
+     // 4'b0001: // reserved for VB-ID, Maud, Mvid   // Note the VB-ID Maud + Mvid are repeated once
+     // 4'b0010: // reserved for VB-ID, Maud, Mvid
+        4'b0011: out_data[53:36] <= { SS,                                                    SS }; 
+        4'b0100: out_data[53:36] <= { 1'b0, M_value[15:8],                                   1'b0, M_value[23:16] };
+        4'b0101: out_data[53:36] <= { 1'b0, 4'b0000, H_visible[11:8],                        1'b0, M_value[7:0] };
+        4'b0110: out_data[53:36] <= { 1'b0, 4'b0000, V_visible[11:8],                        1'b0, 4'b0000, H_visible[7:0] };
+        4'b0111: out_data[53:36] <= { 1'b0, 8'b00000000,                                     1'b0, 4'b0000, V_visible[7:0] };
+        4'b1000: out_data[53:36] <= { 1'b0, SE,                                              1'b0, 8'b00000000 };
+        default: out_data[53:36] <= { in_data[53:44],                                        in_data[44:36]};
     endcase
 
+    // channel Four 
     case(count)
-     // 4'b00000: // while waiting for BS symbol
+     // 4'b0000: // while waiting for BS symbol
      // 4'b0001: // reserved for VB-ID, Maud, Mvid 
      // 4'b0010: // reserved for VB-ID, Maud, Mvid
-     // 4'b0011: // reserved for VB-ID, Maud, Mvid
-        4'b0100: out_data[35:18] <= { SS,                                                    SS};
-        4'b0101: out_data[35:18] <= { 1'b0, M_value[15:8],                                   1'b0, M_value[23:16]};
-        4'b0110: out_data[35:18] <= { 1'b0, 4'b0000, H_start[11:8],                          1'b0, M_value[7:0]};
-        4'b0111: out_data[35:18] <= { 1'b0, 4'b0000, V_start[11:8],                          1'b0, H_start[7:0]};
-        4'b1000: out_data[35:18] <= { 1'b0, V_vsync_active_high, 3'b000, V_sync_width[11:8], 1'b0, V_start[7:0]};
-        4'b1001: out_data[35:18] <= { 1'b0, M_value[23:16],                                  1'b0, V_sync_width[7:0]};
-        4'b1010: out_data[35:18] <= { 1'b0, M_value[7:0],                                    1'b0, M_value[15:8]};
-        4'b1011: out_data[35:18] <= { 1'b0, N_value[15:8],                                   1'b0, N_value[23:16]}; 
-        4'b1100: out_data[35:18] <= { 1'b0, misc0,                                           1'b0, N_value[7:0]};
-        4'b1101: out_data[35:18] <= { 1'b0, 8'b00000000,                                     1'b0, misc1}; 
-        4'b1110: out_data[35:18] <= { in_data[35:27],                                        SE};
-        default:  out_data[35:18] <= { in_data[35:27],                                        in_data[26:18] };
+        4'b0011: out_data[71:54] <= { SS,                                                    SS};
+        4'b0100: out_data[71:54] <= { 1'b0, M_value[15:8],                                   1'b0, M_value[23:16]};
+        4'b0101: out_data[71:54] <= { 1'b0, N_value[23:16],                                  1'b0, M_value[7:0]};
+        4'b0110: out_data[71:54] <= { 1'b0, N_value[7:0],                                    1'b0, N_value[15:8]}; 
+        4'b0111: out_data[71:54] <= { 1'b0, misc1,                                           1'b0, misc0};
+        4'b1000: out_data[71:54] <= { 1'b0, SE,                                              1'b0, 8'b00000000}; 
+        default: out_data[71:54] <= { in_data[71:64],                                        in_data[63:56] };
     endcase
                 
     //---------------------------------------------------------
     // Update the counter
     //----------------------------------------------------------
-    if(count == 4'b1110) begin
+    if(count == 4'b1000) begin
         count <= 4'b0000;
     end else if(count != 4'b0000) begin
         count <= count + 1;

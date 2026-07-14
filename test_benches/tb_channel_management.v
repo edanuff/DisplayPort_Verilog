@@ -56,6 +56,7 @@
 //  Commercial use  - A weeks pay for an engineer (I wish!)
 //
 ///////////////////////////////////////////////////////////////////////////////
+`timescale 1ns / 1ps
 module tb_channel_management;
 
     reg        clk100;
@@ -98,6 +99,75 @@ initial begin
     tx_running           = 4'b0000;
 end
 
+`ifndef LINK_RATE_MBPS_TB
+ `define LINK_RATE_MBPS_TB 1620
+`endif
+
+// transceivers report running as soon as they are powered (stub behaviour)
+always @(posedge clk100)
+    tx_running <= tx_powerup_channel;
+
+// ----------------------------------------------------------------------
+// Self-checks: (a) the DPCD 0x100 link-bandwidth byte in the message ROM
+// matches the parameterised rate; (b) the full AUX exchange against the
+// scripted dummy sink brings the link up.
+// ----------------------------------------------------------------------
+reg        rom_de = 0;
+reg  [7:0] rom_msg = 8'h07;      // "set link bandwidth" message
+wire [7:0] rom_data_rbr, rom_data_hbr;
+wire       rom_we_rbr, rom_we_hbr;
+dp_aux_messages #(.LINK_RATE_MBPS(1620)) i_rom_rbr
+    (.clk(clk100), .msg_de(rom_de), .msg(rom_msg), .busy(),
+     .aux_tx_wr_en(rom_we_rbr), .aux_tx_data(rom_data_rbr));
+dp_aux_messages #(.LINK_RATE_MBPS(2700)) i_rom_hbr
+    (.clk(clk100), .msg_de(rom_de), .msg(rom_msg), .busy(),
+     .aux_tx_wr_en(rom_we_hbr), .aux_tx_data(rom_data_hbr));
+
+integer errors = 0;
+integer nbytes = 0;
+reg [7:0] last_rbr, last_hbr;
+
+always @(posedge clk100) begin
+    if (rom_we_rbr) begin
+        last_rbr <= rom_data_rbr;
+        last_hbr <= rom_data_hbr;
+        nbytes   <= nbytes + 1;
+    end
+end
+
+initial begin
+    #200;
+    @(posedge clk100);
+    rom_de <= 1'b1;
+    @(posedge clk100);
+    rom_de <= 1'b0;
+    // message 7 emits 5 bytes; the last is the DPCD 0x100 value
+    wait (nbytes == 5);
+    @(posedge clk100);
+    if (last_rbr !== 8'h06) begin
+        $display("FAIL: RBR link-bw byte %02x (want 06)", last_rbr);
+        errors = errors + 1;
+    end
+    if (last_hbr !== 8'h0A) begin
+        $display("FAIL: HBR link-bw byte %02x (want 0A)", last_hbr);
+        errors = errors + 1;
+    end
+    $display("ROM check done (RBR %02x, HBR %02x)", last_rbr, last_hbr);
+
+    // full link negotiation against the scripted sink
+    wait (tx_link_established === 1'b1);
+    $display("link established at t=%0t", $time);
+    if (errors == 0) $display("LINK TRAINING PASSED");
+    else             $display("%0d ERRORS", errors);
+    $finish;
+end
+
+initial begin
+    #60_000_000;   // 60 ms watchdog
+    $display("FAIL: link never established (timeout)");
+    $finish;
+end
+
 
 always begin
     #5  clk100 = ~clk100; // generate a clock
@@ -111,7 +181,7 @@ tb_dummy_sink i_tb_dummy_sink(
 );
 
 
-channel_management i_channel_management(
+channel_management #(.LINK_RATE_MBPS(`LINK_RATE_MBPS_TB)) i_channel_management(
         .clk100               (clk100),
         .debug                (debug),
 

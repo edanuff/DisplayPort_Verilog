@@ -1,73 +1,100 @@
 # DisplayPort_Verilog
 
-A open source Verilog implementation of DisplayPort protocol for
-FPGAs, released under the MIT License.
+An open-source Verilog implementation of a DisplayPort source (transmitter)
+for FPGAs, with **audio support**, released under the MIT License.
 
-DisplayPort is quite a complex protocol. This is a minimal Verilog
-implementation in the Verilog language. Hopefully this will inspire
-others to improve on this.
+Originally written by Mike Field (hamster) for the Xilinx Artix-7 (Digilent
+Nexys Video); since restructured into a self-contained, instantiable
+`dp_transmitter` module with an ergonomic interface modelled on the
+hdl-util HDMI core, targeting **Gowin GW5AT (Arora V)** parts with GTR12
+transceivers as the primary platform, with the original Artix-7 support
+retained under `examples/`.
 
-This has now been tested using one or two lanes, and 800x600, 720p, 
-1080p and 2160p resolutions, but should work with four lanes too.
-YCC and 442 video are supported.
+## The module
 
-Status
-======
-Note that this is still very alpha. It works for me on my hardware,
-but I don't expect it will work for you with a bit of effort. 
+```systemverilog
+dp_transmitter #(
+    .LANE_COUNT      (2),        // 1 or 2
+    .LINK_RATE_MBPS  (1620),     // RBR; HBR plumbing present
+    // video timing parameters, default 1280x720p60 (fits RBR x2)
+    .AUDIO_RATE      (48000),    // 44100 | 48000
+    .AUDIO_BIT_WIDTH (16)
+) dp (
+    .clk100 (clk100),            // AUX/management clock
+    .refclk0(serdes_refclk),     // SERDES reference
+    .reset  (reset),
+    // pull-style video: the module outputs coordinates and its own
+    // pixel clock (DP synchronous clocking); you supply the pixel
+    .clk_pixel(clk_pixel), .cx(cx), .cy(cy), .rgb(rgb),
+    // HDMI-style audio: one-clk_pixel-wide strobe at the sample rate
+    .clk_audio(strobe), .audio_sample_word('{left, right}),
+    // DP main link + AUX/HPD (analog buffers live in the board top)
+    .dp_tx_lane_p(...), .dp_tx_lane_n(...),
+    .hpd(hpd), .auxch_in(...), .auxch_out(...), .auxch_tri(...),
+    .link_established(...), .video_live(...)
+);
+```
 
-Contributions
-=============
-Please feel free to send pull requests, and please make sure you add
-your name to the file headers. Also feel free to remove my headers 
-for any new files you may add to the project - you deserve the 
-credit not me!
+Everything is inside: video timing generation, pixel CDC, transfer-unit
+packing, MSA, audio secondary data packets (Audio_TimeStamp with measured
+Maud, Audio_Stream with IEC 60958 subframes, Audio InfoFrame) with the
+RS(15,13)/GF(16) ECC and nibble interleaving per DP 1.1a, VB-ID audio
+mute handling, scrambling, link training patterns, AUX-channel link
+policy, and fabric 8b/10b for raw-mode transceivers.
 
-Please make sure that where possible all files include the MIT 
-License information. 
+## Status
 
-My Test setup
-=============
-My own test board is a Digilent Inc Nexys Video, using an Xilinx
-Artix 7 FPGA. However the most of the hardware specific parts are
-limited to the transcievers which can be replaced to support 
-FPGAs from other vendors.
+**Fully verified in simulation; hardware bring-up not yet attempted.**
+Every layer is gated by Icarus Verilog testbenches with *independent*
+C-model checkers (`misc/`):
 
-For a test display I have been using a ViewSonic VX2880ML, which 
-is an older 4k monitor.
+- video: pixel-exact frame reconstruction (720p60 RBR x2 and 800x600
+  RBR x1 with fractional transfer units)
+- audio: SDP extraction with independently-computed ECC, subframe field
+  checks, and PCM sample-continuity across packets; Maud measurement
+  converges under a +200 ppm strobe
+- SDP wire format: byte-for-byte against `misc/dp_sdp_golden.py`, which
+  reproduces the DP 1.1a spec test vectors
+- 8b/10b: exhaustive round-trip incl. TPS2 forced-disparity handling
+- link training: full AUX exchange at RBR against a scripted sink model
 
-I will endevor to test with a few more monitors.
+Synthesizability and sizing are checked with Yosys (`synth_gowin`):
+roughly 800 LUTs for the TU packer, 800 for the SDP engine, 80 per lane
+for 8b/10b, and 6 BSRAMs for the pixel FIFO.
 
-Tested resolutions
-==================
+## Layout
 
-    Resolution | Lanes | Colour Mode | Effective Pixel clock rate
-    -----------+-------+-------------+--------------
-    800x600    |   1   | RGB 444     |  40.00 MHz
-    800x600    |   2   | RGB 444     |  40.00 MHz
-    800x600    |   3   | RGB 444     |  40.00 MHz
-    1280x720   |   1   | RGB 444     |  74.25 MHz
-    1920x1080  |   2   | RGB 444     | 148.50 MHz
-    3240x2160  |   2   | YCC 422     | 165.00 MHz
+```
+src/dp_transmitter.sv   the top-level module
+src/core/               main-link datapath (idle/scrambler/training/skew)
+src/video/              timing generator, CDC FIFO, TU packer, MSA
+src/audio/              sample buffer, Maud measurement, SDP engine
+src/auxch/              AUX channel, EDID/DPCD, link training policy
+src/gowin/              GW5AT platform: fabric 8b/10b, SERDES bank
+src/artix7/             original GTP transceiver bank (legacy)
+src/test_streams/       hamster's hand-coded test sources (regression)
+examples/tang_mega/     GW5AT board top + SERDES IP generation notes
+examples/nexys_video/   original Artix-7 top + Vivado project
+test_benches/           simulation suite
+misc/                   C/python golden-model checkers and decoders
+```
 
-There are in the src/test_streams directory. To change patterns, edit
-src/test_stream.v, switch the module name, and rebuild the file
+## Running the verification suite
 
-These test streams are very crude, and could be greatly improved on.
+Needs Icarus Verilog and a C compiler; see the testbench headers for the
+exact compile lines (each `tb_*.v` documents its own defines). The frame
+testbenches dump pre-scrambler symbol streams which
+`misc/check_dp_frame.c` / `misc/check_dp_audio.c` verify independently.
 
-The M/N problem
-===============
-DisplayPort have M and N values embedded in the data stream, which 
-represent the ratio of the pixel clock to the lane symbol rate. For
-example 148.5MHz 1080p has a ratio of 11 to 20 of the 270MHz link
-speed. It also should embed the lowest 8 bits of the 'M counter' in
-the stream, to allow the sink to regenerate the pixel clock.
+## Heritage and thanks
 
-However 11:20 (or 22:40, or 2200:4000 or any other exact ratio) does
-not work but 0x4688:0x8000 (18,056:32768) does. I do not understand
-this. If somebody could explain this to me so I can document this I 
-would be most greatful.
+The main-link datapath, AUX channel and link-training policy are Mike
+Field's original work - this project stands on it. His original notes:
 
-I suspect is has something to do with the ability for the source to 
-down-spread the link speed, and the sink must be able to correct for 
-this.
+> This design has taken many hours - 3 months of work for the initial
+> VHDL design, and another month or so to convert it to Verilog. If you
+> want to say thanks either drop me an email, or how about PayPal to
+> hamster@snap.net.nz?
+
+The M/N timing values use his empirically-proven rounded-x0x80000 form
+(exact small rationals are rejected by some sinks).

@@ -1,0 +1,14 @@
+# Gowin EDA build outputs (regenerate with: run all in gw_sh)
+examples/tang_mega/impl/gwsynthesis/
+examples/tang_mega/impl/pnr/
+examples/tang_mega/impl/temp/
+
+# Gowin IP Core Generator scratch directories (keep the generated .v and
+# the .csr/.ipc/.mod/.toml sidecars - the P&R tool needs those)
+examples/tang_mega/src/serdes/dp_phy/temp/
+examples/tang_mega/src/serdes/upar_arbiter/temp/
+
+# Vivado leftovers
+*.jou
+*.log
+.Xil/

@@ -134,7 +134,7 @@ test_source_3840_2180_YCC_422_ch2 i_test_source(
             .data         (raw_data)
         );
 
-insert_main_stream_attrbutes_one_channel i_insert_main_stream_attrbutes_one_channel(
+msa_inserter_1ch i_msa_inserter_1ch(
             .clk                  (clk),
             .active                  (1'b1),
             //////////////////////////////////////////////////////
@@ -173,7 +173,7 @@ insert_main_stream_attrbutes_one_channel i_insert_main_stream_attrbutes_one_chan
             .out_data             (data_ch_1)
         );
 
-insert_main_stream_attrbutes_two_channels i_insert_main_stream_attrbutes_two_channels(
+msa_inserter_2ch i_msa_inserter_2ch(
             .clk                  (clk),
             .active               (1'b1),
             //////////////////////////////////////////////////////
@@ -212,7 +212,7 @@ insert_main_stream_attrbutes_two_channels i_insert_main_stream_attrbutes_two_cha
             .out_data             (data_ch_2)
         );
 
-insert_main_stream_attrbutes_four_channels i_insert_main_stream_attrbutes_four_channels(
+msa_inserter_4ch i_msa_inserter_4ch(
             .clk                  (clk),
             .active               (1'b1),
             //////////////////////////////////////////////////////

@@ -58,7 +58,9 @@
 ///////////////////////////////////////////////////////////////////////////////
 `timescale 1ns / 1ps
 
-module aux_channel(
+module aux_channel #(
+    parameter LINK_RATE_MBPS = 2700
+)(
         input        clk,
         output [7:0] debug_pmod,
         //------------------------------
@@ -203,7 +205,7 @@ initial begin
     tx_link_established = 1'b0;
 end
 
-dp_aux_messages i_aux_messages(
+dp_aux_messages #(.LINK_RATE_MBPS(LINK_RATE_MBPS)) i_aux_messages(
          .clk          (clk),
          // Interface to send messages
          .msg_de       (msg_de),
