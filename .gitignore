@@ -12,3 +12,6 @@ examples/tang_mega/src/serdes/upar_arbiter/temp/
 *.jou
 *.log
 .Xil/
+
+# Python cache
+__pycache__/
