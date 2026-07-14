@@ -66,9 +66,14 @@ C-model checkers (`misc/`):
   link domain, 148.5 MHz pixel domain - with zero violations and a
   generated bitstream; 5% LUT, 12% BSRAM (see examples/tang_mega/)
 
-Synthesizability and sizing are checked with Yosys (`synth_gowin`):
-roughly 800 LUTs for the TU packer, 800 for the SDP engine, 80 per lane
-for 8b/10b, and 6 BSRAMs for the pixel FIFO.
+Authoritative resource usage comes from the Gowin place & route of the
+full design (examples/tang_mega/, GW5AT-60): **2881 LUT (5%), 2343
+registers (4%), 13 BSRAM (12%)** - leaving ~95% of the device for the
+system the transmitter is embedded in. For quick development-loop
+checks without the Gowin tools, Yosys (`synth -lut 4` / `synth_gowin`)
+gives per-module estimates: roughly 800 LUTs for the TU packer, 800 for
+the SDP engine, 80 per lane for 8b/10b, and 6 BSRAMs for the pixel
+FIFO.
 
 ## Layout
 
