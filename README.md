@@ -15,8 +15,9 @@ retained under `examples/`.
 ```systemverilog
 dp_transmitter #(
     .LANE_COUNT      (2),        // 1 or 2
-    .LINK_RATE_MBPS  (1620),     // RBR; HBR plumbing present
-    // video timing parameters, default 1280x720p60 (fits RBR x2)
+    .LINK_RATE_MBPS  (2700),     // HBR (1620 = RBR also verified)
+    // video timing: 1920x1080p60 (2200x1125, pixel clock 148.5 MHz
+    //   = 135 MHz link word clock x 11/10); default params are 720p60
     .AUDIO_RATE      (48000),    // 44100 | 48000
     .AUDIO_BIT_WIDTH (16)
 ) dp (
@@ -48,15 +49,22 @@ policy, and fabric 8b/10b for raw-mode transceivers.
 Every layer is gated by Icarus Verilog testbenches with *independent*
 C-model checkers (`misc/`):
 
-- video: pixel-exact frame reconstruction (720p60 RBR x2 and 800x600
-  RBR x1 with fractional transfer units)
+- video: pixel-exact frame reconstruction in three modes - **1080p60 @
+  HBR x2 (the production target)**, 720p60 @ RBR x2, and 800x600 @
+  RBR x1 (fractional transfer-unit packing)
 - audio: SDP extraction with independently-computed ECC, subframe field
   checks, and PCM sample-continuity across packets; Maud measurement
   converges under a +200 ppm strobe
 - SDP wire format: byte-for-byte against `misc/dp_sdp_golden.py`, which
   reproduces the DP 1.1a spec test vectors
 - 8b/10b: exhaustive round-trip incl. TPS2 forced-disparity handling
-- link training: full AUX exchange at RBR against a scripted sink model
+- link training: full AUX exchange to link-established against a
+  scripted sink model; DPCD link-rate byte checked for both RBR (0x06)
+  and HBR (0x0A)
+- place & route (Gowin EDA, GW5AT-60 with the generated GTR12 SERDES IP
+  and PLLA clocks): timing closed at the 1080p60/HBR rates - 135 MHz
+  link domain, 148.5 MHz pixel domain - with zero violations and a
+  generated bitstream; 5% LUT, 12% BSRAM (see examples/tang_mega/)
 
 Synthesizability and sizing are checked with Yosys (`synth_gowin`):
 roughly 800 LUTs for the TU packer, 800 for the SDP engine, 80 per lane

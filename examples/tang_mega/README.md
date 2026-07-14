@@ -44,7 +44,8 @@ stage in the SDP engine's wire-byte mux.
 Generate a **Customized PHY** (IPUG1024) with:
 
 - Protocol: Customized, **TX only**, 2 lanes, **channel bonding**, QPLL
-- Line rate **1.62 Gbps** (DP RBR), refclk **135 MHz**
+- Line rate **2.7 Gbps** (DP HBR, the 1080p60 production mode; 1.62
+  RBR for the 720p fallback), refclk **135 MHz**
   (program the on-board MS5351 clock generator; 138K Pro controls it via
   the onboard UART — see Sipeed wiki)
 - Internal data width **20**, external ratio 1:1 (fabric width 20)
