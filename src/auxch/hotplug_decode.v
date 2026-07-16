@@ -58,68 +58,72 @@
 ///////////////////////////////////////////////////////////////////////////////
 `timescale 1ns / 1ps
 
-module hotplug_decode(
+module hotplug_decode #(
+    parameter integer CLK_HZ         = 100000000,
+    parameter integer IRQ_MIN_US     = 500,
+    parameter integer IRQ_MAX_US     = 1000,
+    parameter integer DISCONNECT_US  = 2000,
+    parameter integer PRESENT_US     = 2000
+)(
     input  clk,
     input  hpd,
     output reg irq,
     output reg present
 );
 
-   reg hpd_meta1;   // TODO Should also set ASYNC_REG
-   reg hpd_meta2;   // TODO Should also set ASYNC_REG
+   (* ASYNC_REG = "TRUE" *) reg hpd_meta1;
+   (* ASYNC_REG = "TRUE" *) reg hpd_meta2;
    reg hpd_synced;
    reg hpd_last;
 
-   reg [17:0] pulse_count;
+   // The management clock used by this repository is an integer number of MHz.
+   localparam integer CYCLES_PER_US     = CLK_HZ / 1000000;
+   localparam integer IRQ_MIN_CYCLES    = CYCLES_PER_US * IRQ_MIN_US;
+   localparam integer IRQ_MAX_CYCLES    = CYCLES_PER_US * IRQ_MAX_US;
+   localparam integer DISCONNECT_CYCLES = CYCLES_PER_US * DISCONNECT_US;
+   localparam integer PRESENT_CYCLES    = CYCLES_PER_US * PRESENT_US;
+   localparam integer MAX_CYCLES =
+       (DISCONNECT_CYCLES > PRESENT_CYCLES) ?
+       DISCONNECT_CYCLES : PRESENT_CYCLES;
+   localparam integer COUNTER_WIDTH = $clog2(MAX_CYCLES + 1);
+
+   reg [COUNTER_WIDTH-1:0] pulse_count;
 
 
 initial begin
     hpd_meta1    = 1'b0;
     hpd_meta2    = 1'b0;
     hpd_synced   = 1'b0;
-    hpd_last     = 1'b1;
-    pulse_count  = 18'b0;
+    hpd_last     = 1'b0;
+    pulse_count  = {COUNTER_WIDTH{1'b0}};
     present      = 1'b0;
     irq          = 1'b0;
 end 
 
 always @(posedge clk) begin
     irq <= 1'b0;
-    if(hpd_last == 1'b0) begin
-        if(hpd_synced == 1'b0) begin
-            if(pulse_count == 200000) begin  // TODO - should not be a constant!
-                //--------------------------------
-                // Sink has gone away for over 2ms
-                // No longer present
-                //--------------------------------
+    if(hpd_synced == 1'b0) begin
+        if(hpd_last == 1'b1) begin
+            // Start timing a low interval.
+            pulse_count <= {{(COUNTER_WIDTH-1){1'b0}}, 1'b1};
+        end else if(pulse_count < DISCONNECT_CYCLES) begin
+            pulse_count <= pulse_count + 1'b1;
+            if(pulse_count == DISCONNECT_CYCLES-1)
                 present <= 1'b0;
-            end else begin
-                pulse_count <= pulse_count + 1;
-            end
-        end else begin
-            //----------------------------------------
-            // Timing the pulse to see if it is an IRQ
-            //----------------------------------------
-            if(pulse_count > 100000) begin  // TODO - should not be a constant!
-                //-----------------------------------
-                // Signal is back, but less than 2ms
-                // so signal an IRQ...
-                //-----------------------------------
-                if(present == 1'b1) begin
-                  irq <= present;
-                end
-            end
-            pulse_count = 18'b0;
         end
     end else begin
-        if(hpd_synced == 1'b0) begin
-            pulse_count = 18'b0;            // Flip to other state
-        end else begin
-            if(pulse_count == 220000) begin
-                present <= 1'b1;                // Pulse seen long enough to be valid
-            end else begin
-                pulse_count <= pulse_count + 1; // Time till the signal is valid for > 2ms
-            end
+        if(hpd_last == 1'b0) begin
+            // A 0.5-1.0 ms low interval is a DisplayPort HPD IRQ. A low
+            // interval of 2 ms or more is disconnect/reconnect.
+            if(present == 1'b1 &&
+               pulse_count >= IRQ_MIN_CYCLES &&
+               pulse_count <= IRQ_MAX_CYCLES)
+                irq <= 1'b1;
+            pulse_count <= {{(COUNTER_WIDTH-1){1'b0}}, 1'b1};
+        end else if(pulse_count < PRESENT_CYCLES) begin
+            pulse_count <= pulse_count + 1'b1;
+            if(pulse_count == PRESENT_CYCLES-1)
+                present <= 1'b1;
         end
     end
     hpd_last   <= hpd_synced;

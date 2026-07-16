@@ -15,3 +15,4 @@ examples/tang_mega/src/serdes/upar_arbiter/temp/
 
 # Python cache
 __pycache__/
+.DS_Store

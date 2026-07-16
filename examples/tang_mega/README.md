@@ -83,78 +83,65 @@ the simulations.
 Target connector topology: a single USB-C receptacle carrying DP Alt Mode
 video plus USB 2.0 from an on-board MCU.
 
+**Recommended approach: the scoped FUSB302B + ESP32-S3 design in
+[`usb-c/`](../../usb-c/).** PD and Alt Mode policy run as ~1.1k lines of
+portable, tested C on the ESP32-S3 (which also provides the USB 2.0
+host/device function), with the FUSB302B as the CC PHY and the
+TUSB1046A-DCI as the lane/AUX crosspoint. See
+[`usb-c/SPEC.md`](../../usb-c/SPEC.md) for the complete port
+specification - roles, power policy, VDM sequence, TUSB1046A control
+truth table, HPD translation, and detach behavior - and
+[`usb-c/README.md`](../../usb-c/README.md) for the integration contract.
+
 ```
                      +-------------------+
- FPGA DP lanes ----->|                   |----> USB-C SS pairs (TX1/RX1/TX2/RX2)
+ FPGA DP lanes ----->|                   |----> USB-C SS pairs (all four)
  FPGA AUX (2 GPIO) ->|  TUSB1046A-DCI    |----> SBU1/SBU2
-                     |  (linear redriver |
-      orientation -->|  + crosspoint)    |
-      + config       +-------------------+
-                              ^
-                              | CTL/I2C
- FPGA HPD (GPIO) <---+--------+----------+
-                     |   PD controller   |<---> CC1/CC2  (attach, orientation,
- MCU (I2C, opt.) <-->|   (e.g. TPS25750/ |       PD, Enter DP Alt Mode,
-                     |    TPS65983)      |       HPD via Status/Attention VDMs)
-                     +-------------------+----> VBUS source switch (5 V out)
-
- MCU USB 2.0 D+/D- -------- ESD ------------> A6+B6 / A7+B7 (tied pairs)
+                     +-------------------+
+                        ^ FLIP/CTL0/CTL1/HPDIN
+                        |
+ FPGA HPD/DP-enable <-- ESP32-S3 <--I2C/INT--> FUSB302B <--> CC1/CC2
+ (usb-c/rtl bridge      |    |
+  optional)             |    +--> VBUS 5 V source switch (existing
+                        |         board path, hardware current limit)
+ MCU USB 2.0 D+/D- -----+--- ESD ---> A6+B6 / A7+B7 (tied pairs)
 ```
 
-Division of labour:
+Key properties (details in SPEC.md):
 
-- **TUSB1046A-DCI**: routes the DP lanes onto the connector's high-speed
-  pairs, un-flips plug orientation, applies the negotiated pin
-  assignment, and muxes the AUX channel onto SBU1/SBU2. Pure analog -
-  it must be *told* orientation and mode by the PD controller.
-- **PD controller**: everything protocol-side. Detects attach and
-  orientation on CC, sources VBUS (we are the DFP/source), runs the
-  Discover/Enter Mode exchange for the DisplayPort SVID, sends DP
-  Configure, drives the 1046's control pins, and converts the sink's
-  DP Status/Attention messages into a local **HPD GPIO for the FPGA**
-  (there is no HPD wire on USB-C). HPD asserts only after the full PD
-  negotiation, which the design already tolerates - it idles until HPD.
-- **USB 2.0**: D+/D- have dedicated connector pins present in both
-  orientations (A6/A7, B6/B7). Tie A6-B6 and A7-B7 at the receptacle,
-  add ESD protection, wire to the MCU. No mux, no interaction with the
-  1046 or with DP lane count - DP can use all four SS pairs (pin
-  assignment C/E, keeping 4-lane open) while USB 2.0 runs.
+- 5 V only, one fixed Source PDO (5 V/1 A, Rp at default USB current;
+  sized for a small bus-powered hub with a DP-to-HDMI bridge - larger
+  docks need a powered hub; SPEC.md documents how to change the
+  budget); the board's hardware current limiter stays authoritative;
+  power/data roles are paired at attach and all swaps are rejected
+- Device mode (attached to a PC): non-PD sink, ESP32-S3 USB device;
+  the board may be bus-powered from the host's 500 mA in this mode
+  (programming/debug posture - DP and SERDES are off by design)
+- Host mode (attached to a monitor): 5 V source, USB host, DP Alt Mode
+  entered via the standard VDM ladder, pin assignment C (four pairs to
+  DP; the FPGA still trains its two-lane link inside them)
+- HPD is reconstructed from DP Status/Attention VDMs by the ESP32 and
+  delivered to `dp_transmitter.hpd` (optionally through
+  `usb-c/rtl/usbc_dp_control.sv`, which generates the timed IRQ pulse
+  for the parameterized `hotplug_decode`)
+- Out of scope by design: monitors/docks that insist on powering the
+  board (Rp-presenting chargers), pin assignment D-only sinks, active
+  or electronically marked cables, USB3/USB4
 
-### Port operating modes (chosen design)
+### Alternative: autonomous PD controller
 
-One USB-C receptacle, dual-role (DRP), two modes that both fall out of
-a single standard attach resolution - no role swaps required, because
-data role, power role and Alt Mode stay naturally aligned:
-
-| | Far end | Our PD role | VBUS | MCU USB role | DP |
-|---|---|---|---|---|---|
-| **Device mode** | PC | sink / UFP | in (from PC) | device | none - Alt Mode never entered, FPGA HPD stays low, dp_transmitter idles |
-| **Host mode** | monitor / dock | source / DFP | out (we supply 5 V) | host (to the monitor's hub) | Alt Mode entered, HPD asserts, link trains |
-
-Configuration notes for this scheme:
-
-- PD controller: DRP with **Try.SNK** (against a DRP-capable PC we bias
-  to sink/device; monitors are sink-only so we always resolve source
-  against them). DP source capability advertised in the DFP case only.
-- The **MCU must have dual-role (OTG/DRD) USB 2.0** and needs to learn
-  the resolved role from the PD controller - a data-role GPIO or an
-  I2C status poll - to start the matching stack. Host role and
-  VBUS-sourcing always coincide, so no separate host-VBUS switch is
-  needed beyond the port's source path.
-- VBUS path must be bidirectional at the board level: a sourcing
-  switch (5 V out, PD-controller gated) and tolerance of applied VBUS
-  when attached to a PC (board is otherwise self-powered).
-- The FPGA is identical in both modes: everything is gated by the HPD
-  GPIO from the PD controller, which only ever asserts in host mode
-  after Alt Mode configuration completes.
-
-RTL impact of all of this: none beyond what exists. HPD arrives as a
-GPIO level with IRQ pulses (hotplug_decode already handles both), AUX
-is unchanged, and any board-routing P/N swaps on the lanes are fixed
-with the GTR12's static TX polarity-invert option. Plan the PD
-controller configuration (straps/EEPROM, or the MCU as its I2C master)
-as its own bring-up workstream - it is the largest piece of the
-connector-side puzzle.
+Implementors who prefer PD to live entirely in silicon - no PD firmware
+on the MCU, USB-C negotiation independent of MCU health - can use a
+stand-alone Alt-Mode-capable PD controller such as the TI **TPS65987D**
+(or dual-port TPS65988) driving the same TUSB1046A and HPD wiring. The
+part is NRND but well documented (TRM + app note SLVA844 "TPS6598x
+DisplayPort Alternate Mode", TIDA-050012/050014 reference designs) and
+was validated as expressible for this exact topology: DFP_D source,
+pin assignments C/D/E, single 5 V PDO, GPIO events for mux control and
+HPD, configuration via the TPS6598x Application Customization Tool
+into an SPI flash. Note that the TPS25750/TPS25751/TPS26750 do NOT
+support Alt Mode and cannot be substituted. The detailed configuration
+is left as an exercise for the implementor.
 
 ## References
 

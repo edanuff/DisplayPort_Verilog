@@ -88,6 +88,8 @@ src/artix7/             original GTP transceiver bank (legacy)
 src/test_streams/       hamster's hand-coded test sources (regression)
 examples/tang_mega/     GW5AT board top + SERDES IP generation notes
 examples/nexys_video/   original Artix-7 top + Vivado project
+usb-c/                  USB-C DP Alt Mode port: spec + FUSB302B/ESP32-S3
+                        PD policy (recommended connector approach)
 test_benches/           simulation suite
 misc/                   C/python golden-model checkers and decoders
 ```
