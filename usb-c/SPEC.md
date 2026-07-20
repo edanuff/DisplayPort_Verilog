@@ -158,9 +158,15 @@ two HBR lanes. Connect FPGA lanes 0 and 1 to TUSB1046A DP inputs 0 and 1 -
 or, when board routing prefers it, any permutation and per-pair P/N inversion
 of the transceiver lanes: the GTR12 Customized PHY must then be generated to
 match (bonded lane group selection and per-lane `tx_pol_invert`), and the
-copper/gateware contract must be recorded on the schematic. The a2-mega
-carrier does exactly this (DP0<-L1, DP1<-L2, DP2<-L3, DP3<-L0, all pairs
-inverted, refclk on Q0_REFCLK1).
+copper/gateware contract must be recorded on the schematic - in DIE-true
+lane names, not carrier-label names. The a2-mega carrier (GW5AT-60 SOM) does
+exactly this: DP0<-L3, DP1<-L2, DP2<-L1 (those three pairs P/N-inverted),
+DP3<-L0 (not inverted; L0's polarity label on the Sipeed carrier sheet
+contradicts the die pinout - verify before 4-lane use), refclk on
+Q0_REFCLK1. Note the Tang Mega SOM PCB carries 138K-convention net names;
+on the 60K die, lanes 1 and 3 swap ball positions relative to the 138K, so
+carrier labels must be translated before configuring the PHY. The 2-lane
+link therefore bonds lanes 3+2 with tx_pol_invert on both.
 
 Connector-side AC coupling follows the TUSB1046A datasheet reference design
 (Figures 27/28): capacitors on the TX1/TX2 pairs only. The RX1/RX2 pairs run

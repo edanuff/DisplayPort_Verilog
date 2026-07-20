@@ -71,11 +71,15 @@ Generate a **Customized PHY** (IPUG1024) with:
   compensate in fabric (complementing 10-bit codes breaks running
   disparity)
 - More generally, a carrier board may **permute lanes and invert pairs**
-  for routing (the a2-mega carrier maps DP0←L1, DP1←L2, DP2←L3, DP3←L0
-  with every pair inverted). The IP must be generated to match — bonded
-  lane group selection plus per-lane `tx_pol_invert` — and the mapping
-  must be recorded on the board schematic; neither side is discoverable
-  from the other
+  for routing. The IP must be generated to match — bonded lane group
+  selection plus per-lane `tx_pol_invert` — and the mapping must be
+  recorded on the board schematic in **die-true lane names**; neither
+  side is discoverable from the other. Beware: the Tang Mega SOM PCB is
+  shared between the 138K and 60K, and its net names use the 138K
+  convention — on the GW5AT-60 die, Q0 lanes 1 and 3 swap ball positions
+  (C7/D7 = L3, C5/D5 = L1 on the 60K). The a2-mega carrier's die-true
+  mapping: DP0←L3, DP1←L2, DP2←L1 (inverted pairs), DP3←L0 (not
+  inverted) — its 2-lane link bonds lanes 3+2 with `tx_pol_invert`
 
 Keep the generated `serdes.v` / `Customized_PHY_Top` **and the
 `serdes.toml` / `.csr` sidecars** in the project — the sidecars carry most
