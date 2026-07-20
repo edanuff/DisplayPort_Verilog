@@ -137,6 +137,78 @@ module transceiver_bank_gowin (
     always @(posedge mgmt_clk)
         por_n <= (powerup_channel != 2'b00);
 
+`ifdef DP_SERDES_LANES_23
+    // ------------------------------------------------------------------
+    // a2-mega carrier (GW5AT-60 SOM): board routing delivers die lane 3
+    // to TUSB1046A DP0 and die lane 2 to DP1, both pairs P/N-inverted
+    // (compensated by tx_pol_invert inside the generated IP). Fabric
+    // word lane 0 (ML0) therefore drives ln3 and word lane 1 (ML1)
+    // drives ln2. Bonding master is lane 2: its PCS clkout and pll_lock
+    // serve the bank. IP generated with lanes 2+3, REFCLK1, QPLL0.
+    // ------------------------------------------------------------------
+    dp_serdes i_dp_serdes (
+        .por_n_i                    (por_n),
+        // lane 3 TX <= word lane 0 (ML0)
+        .dp_phy_q0_ln3_tx_clk_i     (tx_symbol_clk),
+        .dp_phy_q0_ln3_tx_pcs_clkout_o (),
+        .dp_phy_q0_ln3_tx_data_i    ({60'b0, tx_code0}),
+        .dp_phy_q0_ln3_tx_fifo_wren_i (1'b1),
+        .dp_phy_q0_ln3_tx_fifo_wrusewd_o (),
+        .dp_phy_q0_ln3_tx_fifo_afull_o (),
+        .dp_phy_q0_ln3_tx_fifo_full_o (),
+        .dp_phy_q0_ln3_pma_rstn_i   (pma_rstn),
+        .dp_phy_q0_ln3_pcs_tx_rst_i (pcs_tx_rst),
+        .dp_phy_q0_ln3_pll_lock_o   (),
+        .dp_phy_q0_ln3_ready_o      (lane_ready[0]),
+        .dp_phy_q0_ln3_refclk_o     (),
+        .dp_phy_q0_ln3_rx_clk_i     (1'b0),
+        .dp_phy_q0_ln3_rx_fifo_rden_i (1'b0),
+        .dp_phy_q0_ln3_pcs_rx_rst_i (1'b1),
+        .dp_phy_q0_ln3_rx_pcs_clkout_o (),
+        .dp_phy_q0_ln3_rx_data_o    (),
+        .dp_phy_q0_ln3_rx_fifo_rdusewd_o (),
+        .dp_phy_q0_ln3_rx_fifo_aempty_o (),
+        .dp_phy_q0_ln3_rx_fifo_empty_o (),
+        .dp_phy_q0_ln3_rx_valid_o   (),
+        .dp_phy_q0_ln3_signal_detect_o (),
+        .dp_phy_q0_ln3_rx_cdr_lock_o (),
+        // lane 2 TX <= word lane 1 (ML1); bonding master
+        .dp_phy_q0_ln2_tx_clk_i     (tx_symbol_clk),
+        .dp_phy_q0_ln2_tx_pcs_clkout_o (tx_symbol_clk_raw),
+        .dp_phy_q0_ln2_tx_data_i    ({60'b0, tx_code1}),
+        .dp_phy_q0_ln2_tx_fifo_wren_i (1'b1),
+        .dp_phy_q0_ln2_tx_fifo_wrusewd_o (),
+        .dp_phy_q0_ln2_tx_fifo_afull_o (),
+        .dp_phy_q0_ln2_tx_fifo_full_o (),
+        .dp_phy_q0_ln2_pma_rstn_i   (pma_rstn),
+        .dp_phy_q0_ln2_pcs_tx_rst_i (pcs_tx_rst),
+        .dp_phy_q0_ln2_pll_lock_o   (pll_lock),
+        .dp_phy_q0_ln2_ready_o      (lane_ready[1]),
+        .dp_phy_q0_ln2_refclk_o     (),
+        .dp_phy_q0_ln2_rx_clk_i     (1'b0),
+        .dp_phy_q0_ln2_rx_fifo_rden_i (1'b0),
+        .dp_phy_q0_ln2_pcs_rx_rst_i (1'b1),
+        .dp_phy_q0_ln2_rx_pcs_clkout_o (),
+        .dp_phy_q0_ln2_rx_data_o    (),
+        .dp_phy_q0_ln2_rx_fifo_rdusewd_o (),
+        .dp_phy_q0_ln2_rx_fifo_aempty_o (),
+        .dp_phy_q0_ln2_rx_fifo_empty_o (),
+        .dp_phy_q0_ln2_rx_valid_o   (),
+        .dp_phy_q0_ln2_signal_detect_o (),
+        .dp_phy_q0_ln2_rx_cdr_lock_o (),
+        // DRP idle (future swing/FFE reconfiguration hook)
+        .dp_phy_drp_clk_o           (),
+        .dp_phy_drp_addr_i          (24'b0),
+        .dp_phy_drp_wren_i          (1'b0),
+        .dp_phy_drp_wrdata_i        (32'b0),
+        .dp_phy_drp_strb_i          (4'b0),
+        .dp_phy_drp_rden_i          (1'b0),
+        .dp_phy_drp_ready_o         (),
+        .dp_phy_drp_rdvld_o         (),
+        .dp_phy_drp_rddata_o        (),
+        .dp_phy_drp_resp_o          ()
+    );
+`else
     dp_serdes i_dp_serdes (
         .por_n_i                    (por_n),
         // lane 0 TX
@@ -201,6 +273,7 @@ module transceiver_bank_gowin (
         .dp_phy_drp_rddata_o        (),
         .dp_phy_drp_resp_o          ()
     );
+`endif
     assign tx_symbol_clk = tx_symbol_clk_raw;
     // serial data leaves through dedicated pads; these RTL ports idle
     assign gtptx_p = 2'b00;

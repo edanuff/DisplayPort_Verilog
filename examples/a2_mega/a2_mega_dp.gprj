@@ -1,0 +1,44 @@
+<?xml version="1" encoding="UTF-8"?>
+<!DOCTYPE gowin-fpga-project>
+<Project>
+    <Template>FPGA</Template>
+    <Version>5</Version>
+    <Device name="GW5AT-60B" pn="GW5AT-LV60PG484AC1/I0">gw5at60b-002</Device>
+    <FileList>
+        <File path="gowin_defines.v" type="file.verilog" enable="1"/>
+        <File path="src/serdes/dp_phy/dp_phy.v" type="file.verilog" enable="1"/>
+        <File path="src/serdes/dp_serdes.v" type="file.verilog" enable="1"/>
+        <File path="src/serdes/upar_arbiter/upar_arbiter.v" type="file.verilog" enable="1"/>
+        <File path="synth_check_top.sv" type="file.verilog" enable="1"/>
+        <File path="../../src/audio/audio_sample_buffer.v" type="file.verilog" enable="1"/>
+        <File path="../../src/audio/maud_measure.v" type="file.verilog" enable="1"/>
+        <File path="../../src/audio/sdp_engine.v" type="file.verilog" enable="1"/>
+        <File path="../../src/auxch/aux_channel.v" type="file.verilog" enable="1"/>
+        <File path="../../src/auxch/aux_interface.v" type="file.verilog" enable="1"/>
+        <File path="../../src/auxch/channel_managemnt.v" type="file.verilog" enable="1"/>
+        <File path="../../src/auxch/dp_aux_messages.v" type="file.verilog" enable="1"/>
+        <File path="../../src/auxch/dp_register_decode.v" type="file.verilog" enable="1"/>
+        <File path="../../src/auxch/edid_decode.v" type="file.verilog" enable="1"/>
+        <File path="../../src/auxch/hotplug_decode.v" type="file.verilog" enable="1"/>
+        <File path="../../src/auxch/link_signal_mgmt.v" type="file.verilog" enable="1"/>
+        <File path="../../src/core/idle_pattern_inserter.v" type="file.verilog" enable="1"/>
+        <File path="../../src/core/insert_training_pattern.v" type="file.verilog" enable="1"/>
+        <File path="../../src/core/main_stream_processing.v" type="file.verilog" enable="1"/>
+        <File path="../../src/core/scrambler_all_channels.v" type="file.verilog" enable="1"/>
+        <File path="../../src/core/scrambler_reset_inserter.v" type="file.verilog" enable="1"/>
+        <File path="../../src/core/skew_channels.v" type="file.verilog" enable="1"/>
+        <File path="../../src/dp_transmitter.sv" type="file.verilog" enable="1"/>
+        <File path="../../src/gowin/benz_encode.v" type="file.verilog" enable="1"/>
+        <File path="../../src/gowin/enc_8b10b.v" type="file.verilog" enable="1"/>
+        <File path="../../src/gowin/lane_encoder_8b10b.v" type="file.verilog" enable="1"/>
+        <File path="../../src/gowin/transceiver_bank_gowin.v" type="file.verilog" enable="1"/>
+        <File path="../../src/gowin/gowin_plls.v" type="file.verilog" enable="1"/>
+        <File path="../../src/video/dp_video_timing.v" type="file.verilog" enable="1"/>
+        <File path="../../src/video/msa_inserter_1ch.v" type="file.verilog" enable="1"/>
+        <File path="../../src/video/msa_inserter_2ch.v" type="file.verilog" enable="1"/>
+        <File path="../../src/video/msa_inserter_4ch.v" type="file.verilog" enable="1"/>
+        <File path="../../src/video/pixel_cdc_fifo.v" type="file.verilog" enable="1"/>
+        <File path="../../src/video/video_stream_packer.v" type="file.verilog" enable="1"/>
+        <File path="a2_mega_dp.sdc" type="file.sdc" enable="1"/>
+    </FileList>
+</Project>
