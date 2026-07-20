@@ -92,6 +92,30 @@ VBUS source switch off, waits for valid 5 V, and starts the ESP32-S3 USB device
 function. It does not negotiate a Sink PDO and cannot request a voltage above
 5 V.
 
+### Reference VBUS power path
+
+The two directional paths (validated on the a2-mega carrier):
+
+- Source: 5 V rail -> TPS2553 current-limited switch -> VBUS. EN from an MCU
+  GPIO with a 1 kOhm pull-down (off during every reset/boot window);
+  R_ILIM = 23.7 kOhm sets a 1.0 A minimum / 1.17 A maximum limit matching the
+  advertised PDO; 0.1 uF at IN; FAULT optional. On the ESP32-S3, IO46 is an
+  ideal EN pin: its strapping constraint (must be low at reset) is identical
+  to the Type-C requirement.
+- Sink: VBUS -> polymer PTC (1.1 A hold, >=12 V, e.g. Bourns MF-PSML110/12) ->
+  LM66100 ideal diode (CE tied low) -> 5 V rail. The diode blocks backfeed in
+  host mode automatically; the PTC protects the diode's 1.5 A limit against
+  3 A-capable hosts during a board fault. TVS on the connector VBUS node;
+  a few uF bulk plus 0.1 uF on the node.
+
+The paths never fight: in host mode VBUS sits below the rail by the switch
+drop, which holds the ideal diode off.
+
+General rule for nets shared with an unconfigured FPGA (which presents weak
+pull-ups, spec'd as current: up to 400 uA strong tier on Gowin GW5A): 1 kOhm
+pull-downs and 4.7 kOhm pull-ups guarantee valid logic levels against any
+internal pull strength.
+
 ### Bus-powered device operation (programming and debug)
 
 Device mode is the board's programming/debug posture, and the board may be
@@ -130,7 +154,20 @@ class-driver operation; this directory only selects host, device, or off.
 ## 5. DisplayPort path
 
 The FPGA is always a DP source. The current Tang Mega configuration supplies
-two HBR lanes. Connect FPGA lanes 0 and 1 to TUSB1046A DP inputs 0 and 1.
+two HBR lanes. Connect FPGA lanes 0 and 1 to TUSB1046A DP inputs 0 and 1 -
+or, when board routing prefers it, any permutation and per-pair P/N inversion
+of the transceiver lanes: the GTR12 Customized PHY must then be generated to
+match (bonded lane group selection and per-lane `tx_pol_invert`), and the
+copper/gateware contract must be recorded on the schematic. The a2-mega
+carrier does exactly this (DP0<-L1, DP1<-L2, DP2<-L3, DP3<-L0, all pairs
+inverted, refclk on Q0_REFCLK1).
+
+Connector-side AC coupling follows the TUSB1046A datasheet reference design
+(Figures 27/28): capacitors on the TX1/TX2 pairs only. The RX1/RX2 pairs run
+DC to the receptacle - in DP Alt Mode their blocking capacitors live at the
+far end (the sink's USB TX caps) or inside a Type-C-to-DP adapter. Do not add
+board caps to the RX pairs; in the C-to-C case that puts two capacitors in
+series and drops below DisplayPort's 75 nF minimum.
 
 Because USB 3.x is not implemented, DP Alt Mode selects pin assignment C and
 puts the TUSB1046A in its four-pair DP configuration. Allocating four Type-C
@@ -141,7 +178,26 @@ The DP AUX source-side electrical interface, AC coupling, and bias network must
 be implemented between the FPGA board-level AUX buffer and the TUSB1046A AUX
 pins. SBU1/SBU2 connect only through the TUSB1046A AUX switch.
 
-## 6. TUSB1046A GPIO-mode control
+## 6. TUSB1046A control
+
+I2C mode is the recommended control method (used by the a2-mega carrier):
+
+- `I2C_EN` pulled to 3.3 V through 1 kOhm; `SSEQ0/A0` and `DPEQ0/A1` left
+  floating, giving 7-bit address 0x12 on the same bus as the FUSB302B (0x22).
+- Pins 23 (`CTL1/HPDIN`), 29, and 32 are no-connects. In I2C mode pin 23 is
+  an HPD input with an internal 500 kOhm pull-down; firmware sets
+  `HPDIN_OVRRIDE` (General register 0x0A bit 3) so the pin is ignored -
+  HPD originates in the ESP32 anyway, so the wire adds nothing.
+- To enable DP after DP Configure is ACKed and HPD is high, write register
+  0x0A with `CTLSEL[1:0]=10` (four-lane DP), `FLIPSEL` per cable orientation,
+  and `HPDIN_OVRRIDE=1`. On HPD low, mode exit, or detach, write `CTLSEL=01`
+  (USB3-only default, DP lanes off). Receiver EQ is register-settable
+  (`DPxEQ_SEL`) instead of strap resistors.
+- AUX snooping (on by default) watches DPCD `LANE_COUNT_SET` and
+  `SET_POWER_STATE` writes and trims the active lanes to what the FPGA's
+  link training negotiates - no firmware involvement.
+
+### Alternative: GPIO-mode control
 
 `I2C_EN` is strapped low. The ESP32 drives:
 
@@ -183,6 +239,12 @@ runs this structured VDM sequence:
 If the partner has no DisplayPort SVID/mode or declines the sequence, USB 2.0
 host operation remains active and the DP path stays off.
 
+The PD contract (steps through `PS_RDY`) is time-bound and must complete
+regardless of FPGA state. The VDM ladder is not: firmware should gate step 1
+on an FPGA-ready indication (configuration done), since alt mode entry has no
+deadline and DP is useless until the FPGA can train. A monitor attached at
+cold boot simply enters DP a moment later.
+
 This subset intentionally omits cable SOP'/SOP'' discovery, electronically
 marked/active cable policy, USB3, USB4, Thunderbolt, PPS, higher-voltage PDOs,
 and DP sink operation.
@@ -190,10 +252,12 @@ and DP sink operation.
 ## 8. HPD translation
 
 USB-C has no physical DP HPD pin. The monitor supplies HPD level and IRQ in DP
-Status and Attention VDOs. The ESP32 must drive the reconstructed HPD level to:
-
-- TUSB1046A GPIO-mode `HPDIN`; and
-- the FPGA `dp_transmitter` HPD input.
+Status and Attention VDOs. The ESP32 must deliver the reconstructed HPD level
+to the FPGA `dp_transmitter` HPD input - either on a dedicated GPIO or as a
+message over an existing ESP32-to-FPGA link, with the FPGA (optionally via
+`rtl/usbc_dp_control.sv`) regenerating the timed IRQ pulse. In TUSB1046A I2C
+mode no HPD wire to the mux exists; DP enable/disable is done through register
+0x0A (section 6). In GPIO mode the mux's `HPDIN` pin must also be driven.
 
 An HPD IRQ must become a 0.5-1.0 ms nominal low pulse on the DP-source side.
 The repository's `hotplug_decode` uses parameterized 0.5 ms IRQ and 2 ms
@@ -218,7 +282,8 @@ reset, and generates the HPD IRQ pulse expected by the existing decoder.
 On detach or fault, firmware performs these actions in order:
 
 1. drive FPGA HPD low and disable/reset the DP source;
-2. drive TUSB1046A `CTL1` low and `HPDIN` low;
+2. disable DP in the TUSB1046A (I2C mode: write `CTLSEL=01`; GPIO mode:
+   drive `CTL1` low and `HPDIN` low);
 3. stop the ESP32 USB host/device stack;
 4. disable the 5 V VBUS source; and
 5. return the FUSB302B to autonomous DRP toggle.

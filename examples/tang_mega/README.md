@@ -45,9 +45,16 @@ Generate a **Customized PHY** (IPUG1024) with:
 
 - Protocol: Customized, **TX only**, 2 lanes, **channel bonding**, QPLL
 - Line rate **2.7 Gbps** (DP HBR, the 1080p60 production mode; 1.62
-  RBR for the 720p fallback), refclk **135 MHz**
-  (program the on-board MS5351 clock generator; 138K Pro controls it via
-  the onboard UART — see Sipeed wiki)
+  RBR for the 720p fallback), refclk **135 MHz**. On the Sipeed dock this
+  comes from the on-board MS5351 clock generator (138K Pro controls it via
+  the onboard UART — see Sipeed wiki). A custom carrier should use a fixed
+  low-jitter LVDS XO instead (Microchip **DSC1103-135.0000**, sub-ps phase
+  jitter, AC-couple both legs with 100 nF, ferrite-filtered 3.3 V spur;
+  SiTime SiT9121 / Epson SG2520 programmed-to-order as second sources).
+  Every DP rate is an integer multiple of 135 MHz, so a fixed oscillator
+  loses nothing. The **reference clock source (REFCLK0 vs REFCLK1) is a
+  per-board IP-generation setting** — this example uses REFCLK0; the
+  a2-mega carrier uses REFCLK1 for routing reasons
 - Internal data width **20**, external ratio 1:1 (fabric width 20)
 - **8B10B encoding OFF** (raw mode) — encoding is done in fabric by
   `src/gowin/lane_encoder_8b10b.v`, because DP link training (TPS2)
@@ -56,6 +63,19 @@ Generate a **Customized PHY** (IPUG1024) with:
 - DRP port enabled (future link-training-driven swing/FFE via exported
   "TX AFE" `.csr` write sequences); Vdiffpp **420 mV** (DP level 0 +5%),
   FFE flat (Cm=0, C0=40, C1=0), TX bonding master = Q0 Lane0
+- **TX Polarity Invert** is available per lane if board layout wants a
+  lane's P/N pins swapped (currently off on both lanes:
+  `tx_pol_invert`/`TXBITPOLARITYINVERT` in the sidecars). Set it in the
+  IP GUI and regenerate — do NOT confuse it with `tx_bit_invert`/
+  `tx_byte_invert`, which reorder the parallel data, and do not try to
+  compensate in fabric (complementing 10-bit codes breaks running
+  disparity)
+- More generally, a carrier board may **permute lanes and invert pairs**
+  for routing (the a2-mega carrier maps DP0←L1, DP1←L2, DP2←L3, DP3←L0
+  with every pair inverted). The IP must be generated to match — bonded
+  lane group selection plus per-lane `tx_pol_invert` — and the mapping
+  must be recorded on the board schematic; neither side is discoverable
+  from the other
 
 Keep the generated `serdes.v` / `Customized_PHY_Top` **and the
 `serdes.toml` / `.csr` sidecars** in the project — the sidecars carry most
@@ -90,7 +110,8 @@ host/device function), with the FUSB302B as the CC PHY and the
 TUSB1046A-DCI as the lane/AUX crosspoint. See
 [`usb-c/SPEC.md`](../../usb-c/SPEC.md) for the complete port
 specification - roles, power policy, VDM sequence, TUSB1046A control
-truth table, HPD translation, and detach behavior - and
+(I2C-mode recommended, GPIO alternative), HPD translation, and detach
+behavior - and
 [`usb-c/README.md`](../../usb-c/README.md) for the integration contract.
 
 ```
@@ -98,7 +119,7 @@ truth table, HPD translation, and detach behavior - and
  FPGA DP lanes ----->|                   |----> USB-C SS pairs (all four)
  FPGA AUX (2 GPIO) ->|  TUSB1046A-DCI    |----> SBU1/SBU2
                      +-------------------+
-                        ^ FLIP/CTL0/CTL1/HPDIN
+                        ^ I2C (reg 0x0A: DP en/flip/EQ)
                         |
  FPGA HPD/DP-enable <-- ESP32-S3 <--I2C/INT--> FUSB302B <--> CC1/CC2
  (usb-c/rtl bridge      |    |
