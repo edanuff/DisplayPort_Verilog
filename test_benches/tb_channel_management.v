@@ -173,9 +173,12 @@ always begin
     #5  clk100 = ~clk100; // generate a clock
 end
 
-wire dp_tx_hp_detect;
-tb_dummy_sink i_tb_dummy_sink(
-    .clk100           (clk100),
+// Protocol-reactive sink: decodes each AUX request and answers it, so the
+// exchange tracks the FSM revision (the time-scripted tb_dummy_sink is
+// locked to the FSM revision it was scripted against - see its header).
+reactive_dummy_sink i_sink(
+    .auxch_req        (auxch_out),
+    .auxch_tri        (auxch_tri),
     .auxch_data       (auxch_in),
     .hotplug_detect   (hpd)
 );
@@ -184,6 +187,10 @@ tb_dummy_sink i_tb_dummy_sink(
 channel_management #(.LINK_RATE_MBPS(`LINK_RATE_MBPS_TB)) i_channel_management(
         .clk100               (clk100),
         .debug                (debug),
+        // campaign AUX stack inputs (M5 runtime AFE loop): fixed lane-set
+        // byte, AFE sequencer never busy
+        .train_set_byte       (16'h0606),
+        .afe_busy             (1'b0),
 
         .hpd                  (hpd),
         .auxch_in             (auxch_in),
