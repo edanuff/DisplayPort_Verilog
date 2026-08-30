@@ -45,9 +45,29 @@ policy, and fabric 8b/10b for raw-mode transceivers.
 
 ## Status
 
-**Fully verified in simulation; hardware bring-up not yet attempted.**
-Every layer is gated by Icarus Verilog testbenches with *independent*
-C-model checkers (`misc/`):
+**Hardware-proven and in production use.** This core is the DisplayPort
+output of the [a2fpga project](https://github.com/a2fpga/a2fpga_core)'s
+a2mega board (an Apple II FPGA coprocessor), driving USB-C DP Alt Mode
+through the transceiver quads of **two different Gowin Arora-V dies** —
+GW5AT-60 and GW5AST-138 (Tang Mega 60K/138K SOMs) — at 2-lane HBR,
+1080p60 with 48 kHz audio, into USB-C hubs, DP→HDMI converters, and
+DP monitors. Measured on hardware, not assumed:
+
+- multi-hour streaming soaks with the sink's DPCD symbol-error counters
+  (0x210-0x213, read continuously by the core's own instrumentation)
+  holding **zero errors** — bounding the symbol error rate below ~1e-12,
+  orders of magnitude inside the DP 1e-9 BER compliance target
+- zero unintended link teardowns across overnight runs; training,
+  recovery, and IRQ servicing exercised against real hubs, including
+  deliberately hostile conditions (deferred EDID, garbled/lost AUX
+  replies, HPD flap storms)
+- the closed-loop AUX policy (polite attach pacing, ESI sink-IRQ
+  servicing, training-read recovery) was built from and validated
+  against wire captures of a conformant source (an Apple Silicon Mac)
+  driving the same sinks
+
+Every layer is also gated by Icarus Verilog testbenches with
+*independent* C-model checkers (`misc/`):
 
 - video: pixel-exact frame reconstruction in three modes - **1080p60 @
   HBR x2 (the production target)**, 720p60 @ RBR x2, and 800x600 @
