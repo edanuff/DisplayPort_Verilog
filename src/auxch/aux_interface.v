@@ -58,9 +58,17 @@
 ///////////////////////////////////////////////////////////////////////////////
 `timescale 1ns / 1ps
 
-module aux_interface(
+// REPLY_TIMEOUT_TICKS: how long tx_waiting holds `busy` awaiting a sink
+// reply, in half-bit (500 ns) ticks. The historical value 39999 is ~20 ms
+// (the "400us" comment below was stale). BLIND_SINK callers shorten this
+// to ~400 us so the open-loop FSM walk completes well inside the 0.5 s
+// retry watchdog (sim-caught: at 20 ms/transaction the ladder collides
+// with the watchdog and never finishes).
+module aux_interface #(
+    parameter [15:0] REPLY_TIMEOUT_TICKS = 16'd39999
+)(
        input        clk,
-       output [7:0] debug_pmod,
+       output [15:0] debug_pmod,
        //----------------------------
        input        aux_in,
        output reg   aux_out,
@@ -177,7 +185,24 @@ initial begin
     rx_holdoff      = 10'b0;
     debug_pmod_high = 4'b0000;
 end
-    assign debug_pmod = {debug_pmod_high, 3'b000, snoop};
+    // debug_pmod repurposed (was FSM-state, superseded/unconnected):
+    // {sync-pattern hits, accepted RX bytes} — wrapping 4-bit counters.
+    // Discriminates 'sync never matches' vs 'sync ok, bytes rejected'
+    // vs 'decode fully working' at the telemetry level.
+    reg [3:0] dbg_sync_cnt = 4'd0;
+    reg [3:0] dbg_byte_cnt = 4'd0;
+    reg [7:0] dbg_last_byte = 8'd0;
+    reg [2:0] rx_state_d   = 3'b000;
+    always @(posedge clk) begin
+        rx_state_d <= rx_state;
+        if (rx_state == rx_receiving_data && rx_state_d != rx_receiving_data)
+            dbg_sync_cnt <= dbg_sync_cnt + 4'd1;
+        if (rx_wr_en) begin
+            dbg_byte_cnt  <= dbg_byte_cnt + 4'd1;
+            dbg_last_byte <= rx_wr_data;
+        end
+    end
+    assign debug_pmod = {dbg_last_byte, dbg_sync_cnt, dbg_byte_cnt};
     
     //--------------------------------------------
     // Async logic for the FIFO state and pointers
@@ -364,7 +389,7 @@ always @(posedge clk) begin
     //----------------------------------------
     if(bit_counter == bit_counter_max) begin 
         if(tx_state == tx_waiting && tx_state == tx_waiting) begin 
-            if(timeout_count == 39999) begin
+            if(timeout_count == REPLY_TIMEOUT_TICKS) begin
                 tx_state      <= tx_idle;
                 timeout       <= 1'b1;
             end else  begin
@@ -407,7 +432,19 @@ always @(posedge clk) begin
                             //---------------------------------------------------
                             if(rx_buffer == 16'b0101010111110000) begin
                                 rx_bits <= 16'h0000;
-                                if(rx_holdoff[9] == 1'b0) begin
+                                // SQUELCH (2026-08-15): accept a sync only
+                                // while a transaction awaits its reply
+                                // (`busy`). The un-driven pulled-down pair
+                                // idles at zero differential and the
+                                // comparator CHATTERS; chatter passes the
+                                // Manchester gauntlet often enough to stuff
+                                // noise bytes into the RX FIFO, corrupting
+                                // the next reply parse (established-state
+                                // status polls read garbage lock bits ->
+                                // spurious retrain ~1 Hz). Real AUX PHYs
+                                // have analog squelch; this is the digital
+                                // equivalent.
+                                if(rx_holdoff[9] == 1'b0 && busy == 1'b1) begin
                                      //------------------------------------
                                      // Yes, switch to receiving bits, but,
                                      // but only if(the TX modules hasn't

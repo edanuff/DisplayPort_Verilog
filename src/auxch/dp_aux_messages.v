@@ -68,6 +68,18 @@ module dp_aux_messages #(
    input  [7:0] msg,
    output reg   busy,
 
+   // M5 runtime AFE adjust: the TRAINING_LANEx_SET value message 0x19
+   // declares — the ACTUALLY-APPLIED swing/pre-emphasis + cap flags from
+   // afe_adjust_seq, PER LANE: [7:0] = lane 0 (DPCD 0x103), [15:8] =
+   // lane 1 (0x104). Tie to 16'h0606 (legacy swing2+MAX_SWING) when unused.
+   input  [15:0] train_set_byte,
+   // IRQ SERVICE (08-26): the DEVICE_SERVICE_IRQ_VECTOR bits captured from
+   // the last status read, written BACK to DPCD 0x201 (write-1s-to-clear)
+   // by msg 0x1A. A conformant source must acknowledge sink IRQs; ours
+   // never did — every frozen-wedge snapshot showed LINK_STATUS_UPDATED
+   // latched with the sink waiting for service that never came.
+   input  [7:0] irq_clear_byte,
+
    // Interface to the AUX Channel
    output reg       aux_tx_wr_en,
    output reg [7:0] aux_tx_data
@@ -133,7 +145,16 @@ always @(posedge clk) begin
        12'h081: begin aux_tx_data <= 8'h01; aux_tx_wr_en <= 1'b1; end
        12'h082: begin aux_tx_data <= 8'h07; aux_tx_wr_en <= 1'b1; end
        12'h083: begin aux_tx_data <= 8'h00; aux_tx_wr_en <= 1'b1; end
-       12'h084: begin aux_tx_data <= 8'h10; aux_tx_wr_en <= 1'b1; end
+       // TRUTHFUL DOWNSPREAD (2026-08-18): was 0x10 (SPREAD_AMP=1,
+       // inherited) — but the GTR12 QPLL does NO spread-spectrum (Q:
+       // meter: fixed +7.5ppm). Declaring SSC that never comes makes
+       // strict bridge CDRs mis-tune their tracking loops — candidate
+       // for the "locks TPS, dies on scrambled data" class (Ugreen).
+       // 0x00 = no downspread: declare what the clock actually does.
+       // UN-PARKED (same day): scrambler fix tested alone (Ugreen still
+       // C:8000) — truthful downspread now ships as the next single
+       // variable.
+       12'h084: begin aux_tx_data <= 8'h00; aux_tx_wr_en <= 1'b1; end
 
        // Set link count 1
        12'h090: begin aux_tx_data <= 8'h80; aux_tx_wr_en <= 1'b1; end
@@ -182,7 +203,58 @@ always @(posedge clk) begin
        12'h0F3: begin aux_tx_data <= 8'h00; aux_tx_wr_en <= 1'b1; end
        12'h0F4: begin aux_tx_data <= 8'h22; aux_tx_wr_en <= 1'b1; end
 
-       // Resd lane align status for all four lanes 
+       // M5: dynamic TRAINING_LANEx_SET (DPCD 0x103-0x106) — declares the
+       // levels the TX-AFE ACTUALLY drives (registered train_set_byte from
+       // afe_adjust_seq) instead of a fixed constant. Selected by
+       // aux_channel in every set state when AFE_ADJUST != 0.
+       12'h190: begin aux_tx_data <= 8'h80; aux_tx_wr_en <= 1'b1; end
+       12'h191: begin aux_tx_data <= 8'h01; aux_tx_wr_en <= 1'b1; end
+       12'h192: begin aux_tx_data <= 8'h03; aux_tx_wr_en <= 1'b1; end
+       12'h193: begin aux_tx_data <= 8'h03; aux_tx_wr_en <= 1'b1; end
+       // PER LANE: 0x103 <= lane 0 byte, 0x104 <= lane 1 byte. Lanes 2/3
+       // (0x105/0x106) are not part of our 2-lane link and are ignored by
+       // the sink; they mirror lanes 0/1 so the message keeps its 4-byte
+       // length (AUX timing identical to msg 0x18 and to the previous 0x19).
+       12'h194: begin aux_tx_data <= train_set_byte[7:0];  aux_tx_wr_en <= 1'b1; end  // 0x103 lane 0
+       12'h195: begin aux_tx_data <= train_set_byte[15:8]; aux_tx_wr_en <= 1'b1; end  // 0x104 lane 1
+       12'h196: begin aux_tx_data <= train_set_byte[7:0];  aux_tx_wr_en <= 1'b1; end  // 0x105 (unused lane)
+       12'h197: begin aux_tx_data <= train_set_byte[15:8]; aux_tx_wr_en <= 1'b1; end  // 0x106 (unused lane)
+
+       // IRQ service: native 1-byte WRITE of the latched vector back to
+       // DPCD 0x201 — write-1s-to-clear acknowledgment (msg 0x1A)
+       12'h1A0: begin aux_tx_data <= 8'h80; aux_tx_wr_en <= 1'b1; end
+       12'h1A1: begin aux_tx_data <= 8'h02; aux_tx_wr_en <= 1'b1; end
+       12'h1A2: begin aux_tx_data <= 8'h01; aux_tx_wr_en <= 1'b1; end
+       12'h1A3: begin aux_tx_data <= 8'h00; aux_tx_wr_en <= 1'b1; end
+       12'h1A4: begin aux_tx_data <= irq_clear_byte; aux_tx_wr_en <= 1'b1; end
+
+       // ESI SERVICE (polite-attach build): the hub NEVER raises legacy
+       // 0x201 (wire-proven: zero nonzero reads across attach/unplug/replug
+       // captures; the Mac services exclusively via ESI). msg 0x1B reads
+       // the ESI0 block 0x2003-0x200F in one transaction (the Mac's exact
+       // read); msg 0x1C write-1-clears LINK_SERVICE_IRQ_VECTOR_ESI0
+       // (0x2005) with irq_clear_byte (the latched vector, or the
+       // unconditional 0x02 attach ack the Mac performs).
+       12'h1B0: begin aux_tx_data <= 8'h90; aux_tx_wr_en <= 1'b1; end
+       12'h1B1: begin aux_tx_data <= 8'h20; aux_tx_wr_en <= 1'b1; end
+       12'h1B2: begin aux_tx_data <= 8'h03; aux_tx_wr_en <= 1'b1; end
+       12'h1B3: begin aux_tx_data <= 8'h0C; aux_tx_wr_en <= 1'b1; end
+
+       12'h1C0: begin aux_tx_data <= 8'h80; aux_tx_wr_en <= 1'b1; end
+       12'h1C1: begin aux_tx_data <= 8'h20; aux_tx_wr_en <= 1'b1; end
+       12'h1C2: begin aux_tx_data <= 8'h05; aux_tx_wr_en <= 1'b1; end
+       12'h1C3: begin aux_tx_data <= 8'h00; aux_tx_wr_en <= 1'b1; end
+       12'h1C4: begin aux_tx_data <= irq_clear_byte; aux_tx_wr_en <= 1'b1; end
+
+       // msg 0x1D: W1C DEVICE_SERVICE_IRQ_VECTOR_ESI0 (0x2003) — second
+       // clear write, sent only when the block read showed it nonzero
+       12'h1D0: begin aux_tx_data <= 8'h80; aux_tx_wr_en <= 1'b1; end
+       12'h1D1: begin aux_tx_data <= 8'h20; aux_tx_wr_en <= 1'b1; end
+       12'h1D2: begin aux_tx_data <= 8'h03; aux_tx_wr_en <= 1'b1; end
+       12'h1D3: begin aux_tx_data <= 8'h00; aux_tx_wr_en <= 1'b1; end
+       12'h1D4: begin aux_tx_data <= irq_clear_byte; aux_tx_wr_en <= 1'b1; end
+
+       // Resd lane align status for all four lanes
        12'h100: begin aux_tx_data <= 8'h90; aux_tx_wr_en <= 1'b1; end
        12'h101: begin aux_tx_data <= 8'h02; aux_tx_wr_en <= 1'b1; end
        12'h102: begin aux_tx_data <= 8'h04; aux_tx_wr_en <= 1'b1; end
@@ -196,6 +268,18 @@ always @(posedge clk) begin
        12'h114: begin aux_tx_data <= 8'h00; aux_tx_wr_en <= 1'b1; end  // Scrambler enabled
 
        // Set Premp level 0, votage 0.4V
+       // Write DPCD powerstate D0 (0x600 = 0x01): spec-mandated wake
+       // before link config. The stock flow never sent it (live-verified
+       // by the TUSB1046A AUX snooper: SET_POWER_STATE stayed 00); a sink
+       // that idles in low power after Alt-Mode entry ignores training
+       // until woken. Also doubles as the wire-verification loop: after
+       // this lands, mux reg 0x12[6:5] must read 01.
+       12'h130: begin aux_tx_data <= 8'h80; aux_tx_wr_en <= 1'b1; end
+       12'h131: begin aux_tx_data <= 8'h06; aux_tx_wr_en <= 1'b1; end
+       12'h132: begin aux_tx_data <= 8'h00; aux_tx_wr_en <= 1'b1; end
+       12'h133: begin aux_tx_data <= 8'h00; aux_tx_wr_en <= 1'b1; end
+       12'h134: begin aux_tx_data <= 8'h01; aux_tx_wr_en <= 1'b1; end
+
        12'h140: begin aux_tx_data <= 8'h80; aux_tx_wr_en <= 1'b1; end
        12'h141: begin aux_tx_data <= 8'h01; aux_tx_wr_en <= 1'b1; end
        12'h142: begin aux_tx_data <= 8'h03; aux_tx_wr_en <= 1'b1; end

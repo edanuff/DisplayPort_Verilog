@@ -84,6 +84,11 @@ module link_signal_mgmt(
         output  reg  preemp_3p5,
         output  reg  preemp_6p0,
     
+        // Raw sink ADJUST_REQUEST (DPCD 0x206/0x207 as received): the
+        // ground truth of what the sink is asking for, for telemetry.
+        output  [15:0] debug_adjust,
+        output  [23:0] debug_chstate,  // raw DPCD {0x204, 0x203, 0x202}
+
         output  reg  swing_0p4,
         output  reg  swing_0p6,
         output  reg  swing_0p8
@@ -100,7 +105,16 @@ module link_signal_mgmt(
 
     assign active_channel_count = active_channel_count_i;
     assign voltage_level = channel_adjust[1:0];
-    assign preemp_level  = channel_adjust[3:0];
+    // FIXED 2026-08-18: was [3:0] into a 2-bit wire — truncated to the
+    // SWING bits, so the parsed pre-emphasis request tracked the sink's
+    // swing request. Confirmed live once the truthful-declaration build
+    // woke the hub's adjust dialogue (A:0022 => misparsed preemp=2).
+    // Lane-0 pre-emphasis request is DPCD 0x206[3:2].
+    assign preemp_level  = channel_adjust[3:2];
+    assign debug_adjust  = channel_adjust;
+    // {DPCD 0x204 LANE_ALIGN_STATUS, DPCD 0x202 LANE0_1_STATUS}: the
+    // per-lane CR/EQ/SYM bits — one-lane-bad vs both-lanes-bad localizer.
+    assign debug_chstate = channel_state;   // full 0x204/0x203/0x202
     
 initial begin
     active_channel_count_i = 3'b0;
