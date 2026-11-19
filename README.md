@@ -8,13 +8,16 @@ Nexys Video); since restructured into a self-contained, instantiable
 `dp_transmitter` module with an ergonomic interface modelled on the
 hdl-util HDMI core, targeting **Gowin GW5AT (Arora V)** parts with GTR12
 transceivers as the primary platform, with the original Artix-7 support
-retained under `examples/`.
+retained under `examples/`. A third PHY backend drives DisplayPort out of
+smaller **Gowin GW5A parts that have no transceivers** (GW5A-15/25) by using
+the hardened **MIPI D-PHY** as a raw serializer — see
+[`examples/tang_primer_25k/`](examples/tang_primer_25k/).
 
 ## The module
 
 ```systemverilog
 dp_transmitter #(
-    .LANE_COUNT      (2),        // 1 or 2
+    .LANE_COUNT      (2),        // 1, 2, or 4
     .LINK_RATE_MBPS  (2700),     // HBR (1620 = RBR also verified)
     // video timing: 1920x1080p60 (2200x1125, pixel clock 148.5 MHz
     //   = 135 MHz link word clock x 11/10); default params are 720p60
@@ -66,6 +69,14 @@ DP monitors. Measured on hardware, not assumed:
   against wire captures of a conformant source (an Apple Silicon Mac)
   driving the same sinks
 
+The same core also drives **4-lane RBR 1080p60 with 48 kHz audio over the
+GW5A-25's hardened MIPI D-PHY** used as a raw serializer (no transceivers on
+that die), through an SN75DP130 redriver into USB-C DP Alt Mode, on the
+a2fpga a2p25 board — see [`examples/tang_primer_25k/`](examples/tang_primer_25k/)
+and its [DESIGN.md](examples/tang_primer_25k/DESIGN.md). The 10->16 gearbox
+and the D-PHY PHY bank are gated by their own testbenches
+(`test_benches/test_dp_dphy_tx.sv`, `test_benches/test_transceiver_bank_dphy.sv`).
+
 Every layer is also gated by Icarus Verilog testbenches with
 *independent* C-model checkers (`misc/`):
 
@@ -103,10 +114,14 @@ src/core/               main-link datapath (idle/scrambler/training/skew)
 src/video/              timing generator, CDC FIFO, TU packer, MSA
 src/audio/              sample buffer, Maud measurement, SDP engine
 src/auxch/              AUX channel, EDID/DPCD, link training policy
-src/gowin/              GW5AT platform: fabric 8b/10b, SERDES bank
+src/gowin/              GW5A platform: fabric 8b/10b, SERDES bank
+                        (transceiver_bank_gowin) and the MIPI D-PHY bank
+                        (transceiver_bank_dphy + dp_dphy_tx gearbox)
 src/artix7/             original GTP transceiver bank (legacy)
 src/test_streams/       hamster's hand-coded test sources (regression)
 examples/tang_mega/     GW5AT board top + SERDES IP generation notes
+examples/tang_primer_25k/ GW5A-25 board top: DP over the MIPI D-PHY (no
+                        transceivers) + IP generation notes and DESIGN.md
 examples/nexys_video/   original Artix-7 top + Vivado project
 usb-c/                  USB-C DP Alt Mode port: spec + FUSB302B/ESP32-S3
                         PD policy (recommended connector approach)
@@ -120,6 +135,12 @@ Needs Icarus Verilog and a C compiler; see the testbench headers for the
 exact compile lines (each `tb_*.v` documents its own defines). The frame
 testbenches dump pre-scrambler symbol streams which
 `misc/check_dp_frame.c` / `misc/check_dp_audio.c` verify independently.
+
+The MIPI D-PHY backend has its own testbenches, each with its run command in
+its header: `test_benches/test_dp_dphy_tx.sv` (the 10->16 gearbox, fully
+self-contained) and `test_benches/test_transceiver_bank_dphy.sv` (the whole
+PHY bank, using the behavioural D-PHY models in `test_benches/sim_models/`
+and the Gowin GW5A simlib for the GSR cell).
 
 ## Heritage and thanks
 

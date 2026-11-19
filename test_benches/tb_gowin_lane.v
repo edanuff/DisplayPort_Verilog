@@ -42,9 +42,14 @@ lane_encoder_8b10b enc0 (.clk(clk), .reset(reset),
 lane_encoder_8b10b enc1 (.clk(clk), .reset(reset),
                          .tx_symbol(tx_symbols[39:20]), .tx_code(code1));
 
-// reference symbols delayed to match encoder latency
-reg [39:0] ref_q;
-always @(posedge clk) ref_q <= tx_symbols[39:0];
+// reference symbols delayed to match encoder latency. lane_encoder_8b10b
+// registers both its input (sym_q, timing-campaign round 2) and its output,
+// so the code appears two symbol clocks after tx_symbols.
+reg [39:0] ref_q, ref_qq;
+always @(posedge clk) begin
+    ref_q  <= tx_symbols[39:0];
+    ref_qq <= ref_q;
+end
 
 // ----------------------------------------------------------------------
 // per-lane decode-and-check
@@ -112,15 +117,15 @@ initial begin
     tx_clock_train <= 1;
     for (i = 0; i < 2000; i = i + 1) begin
         @(posedge clk); #1;
-        check_lane(code0, ref_q[19:0], 0);
-        check_lane(code1, ref_q[39:20], 1);
+        check_lane(code0, ref_qq[19:0], 0);
+        check_lane(code1, ref_qq[39:20], 1);
     end
     // TPS2 (uses forced disparity)
     tx_clock_train <= 0; tx_align_train <= 1;
     for (i = 0; i < 2000; i = i + 1) begin
         @(posedge clk); #1;
-        check_lane(code0, ref_q[19:0], 0);
-        check_lane(code1, ref_q[39:20], 1);
+        check_lane(code0, ref_qq[19:0], 0);
+        check_lane(code1, ref_qq[39:20], 1);
     end
     if (forced_seen == 0) begin
         $display("FAIL: TPS2 produced no forced-disparity characters");
@@ -130,8 +135,8 @@ initial begin
     tx_align_train <= 0; tx_link_established <= 1;
     for (i = 0; i < 100000; i = i + 1) begin
         @(posedge clk); #1;
-        check_lane(code0, ref_q[19:0], 0);
-        check_lane(code1, ref_q[39:20], 1);
+        check_lane(code0, ref_qq[19:0], 0);
+        check_lane(code1, ref_qq[39:20], 1);
     end
 
     $display("checked %0d symbols, %0d forced", checked, forced_seen);

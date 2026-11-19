@@ -1,0 +1,32 @@
+// Tang Primer 25K (GW5A-LV25MG121) DisplayPort-over-D-PHY example — physical
+// constraints. The pin choices below are an EXAMPLE for a carrier that brings
+// the AUX/HPD/LED signals out on general-purpose BTB pins; adapt the AUX, HPD
+// and LED locations to your own board. The MIPI D-PHY M0 quad is on dedicated
+// hard-PHY pads placed by the IP (no IO_LOC here).
+
+// 50 MHz SOM oscillator
+IO_LOC  "clk50_in" E2;
+IO_PORT "clk50_in" IO_TYPE=LVCMOS33 PULL_MODE=NONE BANK_VCCIO=3.3;
+
+// DP AUX: a true-LVDS pair (single differential port entry). On the carrier
+// this drives 100R + bias dividers -> AC caps -> SN75DP130 AUX_SRC. LVDS25
+// output is legal at VCCIO 3.3 on GW5A; PULL_MODE=DOWN on both legs lets the
+// AC-coupled offset decay between bursts (see src/dp_aux_pad.sv).
+IO_LOC  "dp_aux_p" L2,L1;
+IO_PORT "dp_aux_p" IO_TYPE=LVDS25 PULL_MODE=DOWN BANK_VCCIO=3.3;
+
+// HPD input. In USB-C DP Alt Mode there is no physical HPD wire — an MCU
+// reconstructs it from PD Status/Attention VDMs and drives this pin. Pull
+// down so HPD idles deasserted.
+IO_LOC  "dp_hpd" B2;
+IO_PORT "dp_hpd" IO_TYPE=LVCMOS33 PULL_MODE=DOWN;
+
+// Status LED (active high): lit when the link is established.
+IO_LOC  "led" B10;
+IO_PORT "led" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+
+// MIPI D-PHY M0 quad — dedicated hard-PHY pads, placed by the IP (UG985
+// MG121N): D0 A9/B9, D1 A8/B8, CK A7/B7 (unused for DP - embedded clock),
+// D2 A6/B6, D3 A5/B5. Board routing in this example: DP lane n = D-PHY lane
+// 3-n, straight polarity (REVERSE_LANES=1 in transceiver_bank_dphy). Match
+// REVERSE_LANES / LANE_MAP / POL_INV in the top to your actual PCB routing.

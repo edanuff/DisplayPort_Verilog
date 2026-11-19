@@ -8,6 +8,10 @@ examples/*/build*.log
 # the .csr/.ipc/.mod/.toml sidecars - the P&R tool needs those)
 examples/*/src/serdes/*/temp/
 examples/*/src/serdes/customized_phy/
+examples/*/src/mipi_dphy/*/temp/
+
+# Icarus Verilog testbench dumps
+*.vcd
 
 # Vivado leftovers
 *.jou

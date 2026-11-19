@@ -28,9 +28,14 @@ pipe method:
 ```
 cd examples/tang_mega
 echo 'open_project tang_mega_dp.gprj
+set_option -verilog_std sysv2017
 run all
 exit' | /Applications/GowinIDE.app/Contents/Resources/Gowin_EDA/IDE/bin/gw_sh
 ```
+
+`dp_transmitter.sv` is SystemVerilog, so `-verilog_std sysv2017` is required for
+a clean `gw_sh` build (in the GUI: Project > Configuration > Synthesize > Verilog
+Language = System Verilog 2017).
 
 Result (Gowin V1.9.12.02 SP2): **timing closed, 0 violated endpoints,
 TNS 0.000, bitstream generated** - clk100 109.4/100 MHz, clk_sym

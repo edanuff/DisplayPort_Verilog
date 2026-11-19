@@ -71,8 +71,13 @@ module channel_management #(
     parameter LATE_REPLY_DRAIN = 0, // 0 = legacy error behavior
     parameter POLITE_ATTACH = 0,   // Mac-parity attach pacing (aux_channel.v)
     parameter [5:0] EDID_DEFER_CAP = 6'd40,
+    parameter [28:0] RETRY_WATCHDOG_CLKS = 29'd49999999,
+    parameter [5:0]  EQ_WAIT_MULT = 6'd1,
+    parameter        TRAIN_ERRCNT = 0,
     parameter TRAIN_RECOVER = 1,
     parameter ERRCNT_READ = 0,
+    parameter LINK_CHECK = 1,
+    parameter [26:0] LINK_CHECK_CLKS = 27'd99999999,
     parameter WEDGE_BIT = 30,
     parameter [31:0] WEDGE_PRELOAD = 32'h1000_0000
 )(
@@ -99,6 +104,8 @@ module channel_management #(
         output [15:0] errcnt0,       // SYMBOL_ERROR_COUNT lane0 (raw, bit15=valid)
         output [15:0] errcnt1,       // SYMBOL_ERROR_COUNT lane1
         output [27:0] debug_err_detail, // first teardown {reason, state, expected, rx_cnt}
+        output [103:0] debug_obs,       // LINK_CHECK==2 observe counters (aux_channel)
+        output [23:0]  debug_auxif,     // AUX interface liveness (aux_channel)
         // ATOMIC FIRST-FAILURE SNAPSHOT (second-opinion instrumentation,
         // 08-24): latched in the same clock as the FIRST failing check_wait
         // evaluation since config. {raw 0x204, 0x203, 0x202 at that moment,
@@ -115,6 +122,16 @@ module channel_management #(
         output [31:0] debug_snapshot, // {chstate24, status_seq4, tsl4}
         output [7:0]  debug_caps,    // sink caps: {ext_framing, rate270,
                                      //  rate162, dp_valid, max_downspread[3:0]}
+        // RAW sink capability bytes for the adapter census (a2p25 RBR-x4
+        // hub qualification, the second gate the PD layer cannot see):
+        // [15:8] = DPCD 0x00001 MAX_LINK_RATE verbatim (0x06=RBR 0x0A=HBR
+        // 0x14=HBR2 0x1E=HBR3), [7:0] = DPCD 0x00002 verbatim (low nibble
+        // = MAX_LANE_COUNT, bit7 = enhanced framing). debug_caps above is
+        // LOSSY here (its rate decode only recognizes 0x06/0x0A — an HBR2
+        // sink reads as "no rates"). 0x0000 = not read this HPD session:
+        // the latches clear on presence loss so a hot-swapped adapter can
+        // never inherit the previous sink's bytes.
+        output [15:0] debug_sink_caps,
 
         input   hpd,
         input   auxch_in,
@@ -250,35 +267,74 @@ hotplug_decode i_hotplug_decode(
 
     // M5: the ADJUST_REQUEST lane0/1 byte (DPCD 0x206) is the aux_addr==0
     // beat of the adjust read — one pulse per training iteration.
-    assign adjust_evt = adjust_de & (aux_addr == 8'h00);
+    // adjust_evt is registered inside aux_channel (same edge as adjust_de /
+    // aux_addr, identical value) — timing campaign round 2, cone (a): the
+    // combinational decode here fed afe_adjust_seq's live busy term and
+    // came straight back into aux_channel's afe_hold (+0.19 ns at 100 MHz).
 
     // ---- first-failure snapshot (see the port comment) ----------------
     wire       gate_fail_evt_w;
     wire [3:0] status_seq_w;
     reg [31:0] snap_r    = 32'd0;
     reg        snapped_r = 1'b0;
+    // (138B clk100 ladder, 2026-10-24) the snapshot used to latch straight
+    // off gate_fail_evt & !snapped_r into 32 CEs — one LUT whose net ran
+    // 6.7 ns across the die to the snapshot flops (the 138B gate's worst
+    // clk100 path, +0.002 reported). The event is now registered once
+    // alongside a one-cycle-delayed copy of the data, and the snapshot
+    // latches from those a cycle later: same value captured (snap_d_r
+    // holds exactly what the old latch would have taken), visible to the
+    // reader one 10 ns cycle later. gate_fail_evt pulses are at least one
+    // status read apart, so the pending flag never sees a second event.
+    reg        snap_pend_r = 1'b0;
+    reg [31:0] snap_d_r    = 32'd0;
     // time since the last link_established rise, 100 ms units, saturating
     reg [3:0]  tsl_r     = 4'd0;
     reg [23:0] tsl_tick  = 24'd0;
+    // == (tsl_tick == 9_999_999) on every cycle, maintained at each write
+    // of tsl_tick (138B clk100 ladder, 2026-10-24: the live 24-bit compare
+    // reloaded the 24 tick flops; identical counts and tsl_r)
+    reg        tsl_last_r = 1'b0;
     reg        est_d     = 1'b0;
     always @(posedge clk100) begin
         est_d <= tx_link_established;
         if (tx_link_established && !est_d) begin
-            tsl_r <= 4'd0; tsl_tick <= 24'd0;
+            tsl_r <= 4'd0; tsl_tick <= 24'd0; tsl_last_r <= 1'b0;
         end else if (tx_link_established) begin
-            if (tsl_tick == 24'd9_999_999) begin   // 100 ms @ clk100
-                tsl_tick <= 24'd0;
+            if (tsl_last_r) begin                   // 100 ms @ clk100
+                tsl_tick   <= 24'd0;
+                tsl_last_r <= 1'b0;
                 if (tsl_r != 4'hF) tsl_r <= tsl_r + 4'd1;
-            end else
-                tsl_tick <= tsl_tick + 24'd1;
+            end else begin
+                tsl_tick   <= tsl_tick + 24'd1;
+                tsl_last_r <= (tsl_tick == 24'd9_999_998);
+            end
         end
-        if (gate_fail_evt_w && !snapped_r) begin
+        snap_d_r    <= {debug_chstate, status_seq_w, tsl_r};
+        snap_pend_r <= gate_fail_evt_w && !snapped_r && !snap_pend_r;
+        if (snap_pend_r) begin
             snapped_r <= 1'b1;
-            snap_r    <= {debug_chstate, status_seq_w, tsl_r};
+            snap_r    <= snap_d_r;
         end
     end
     assign debug_snapshot = snap_r;
 
+    // ---- raw sink-caps latch (census tap — see the port comment) ------
+    // Pure observer on the dp_reg_de byte stream the decode below already
+    // consumes; no FSM or decode path is touched. hpd_present is the same
+    // session boundary aux_channel uses for its EDID policy latches.
+    reg [7:0] sink_rate_r  = 8'd0;   // DPCD 0x00001 MAX_LINK_RATE
+    reg [7:0] sink_lanes_r = 8'd0;   // DPCD 0x00002 (lane count + framing)
+    always @(posedge clk100) begin
+        if (!hpd_present) begin
+            sink_rate_r  <= 8'd0;
+            sink_lanes_r <= 8'd0;
+        end else if (dp_reg_de) begin
+            if (aux_addr == 8'h01) sink_rate_r  <= aux_data;
+            if (aux_addr == 8'h02) sink_lanes_r <= aux_data;
+        end
+    end
+    assign debug_sink_caps = {sink_rate_r, sink_lanes_r};
 
 aux_channel #(.LINK_RATE_MBPS(LINK_RATE_MBPS),
               .BLIND_SINK(BLIND_SINK),
@@ -289,8 +345,13 @@ aux_channel #(.LINK_RATE_MBPS(LINK_RATE_MBPS),
               .LATE_REPLY_DRAIN(LATE_REPLY_DRAIN),
               .POLITE_ATTACH(POLITE_ATTACH),
               .EDID_DEFER_CAP(EDID_DEFER_CAP),
+            .RETRY_WATCHDOG_CLKS (RETRY_WATCHDOG_CLKS),
+            .EQ_WAIT_MULT(EQ_WAIT_MULT),
+            .TRAIN_ERRCNT(TRAIN_ERRCNT),
               .TRAIN_RECOVER(TRAIN_RECOVER),
               .ERRCNT_READ(ERRCNT_READ),
+              .LINK_CHECK(LINK_CHECK),
+              .LINK_CHECK_CLKS(LINK_CHECK_CLKS),
               .WEDGE_BIT(WEDGE_BIT), .WEDGE_PRELOAD(WEDGE_PRELOAD)) i_aux_channel(
         .clk             (clk100),
         .train_set_byte  (train_set_byte),
@@ -305,6 +366,8 @@ aux_channel #(.LINK_RATE_MBPS(LINK_RATE_MBPS),
         .errcnt0_o       (errcnt0),
         .errcnt1_o       (errcnt1),
         .debug_err_detail(debug_err_detail),
+        .debug_obs       (debug_obs),
+        .debug_auxif     (debug_auxif),
         .gate_fail_evt   (gate_fail_evt_w),
         .status_seq      (status_seq_w),
         .debug_sink      (debug_sink),
@@ -313,6 +376,7 @@ aux_channel #(.LINK_RATE_MBPS(LINK_RATE_MBPS),
         .edid_de         (edid_de),
         .dp_reg_de       (dp_reg_de),
         .adjust_de       (adjust_de),
+        .adjust_evt      (adjust_evt),
         .status_de       (status_de),
         .aux_addr        (aux_addr),
         .aux_data        (aux_data),

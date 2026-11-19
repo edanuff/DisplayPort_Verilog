@@ -32,6 +32,8 @@
         <File path="../../src/gowin/enc_8b10b.v" type="file.verilog" enable="1"/>
         <File path="../../src/gowin/lane_encoder_8b10b.v" type="file.verilog" enable="1"/>
         <File path="../../src/gowin/transceiver_bank_gowin.v" type="file.verilog" enable="1"/>
+        <File path="../../src/gowin/csr_replay_rom_lut_60b.v" type="file.verilog" enable="1"/>
+        <File path="../../src/gowin/afe_adjust_seq.v" type="file.verilog" enable="1"/>
         <File path="../../src/gowin/gowin_plls.v" type="file.verilog" enable="1"/>
         <File path="../../src/video/dp_video_timing.v" type="file.verilog" enable="1"/>
         <File path="../../src/video/msa_inserter_1ch.v" type="file.verilog" enable="1"/>
